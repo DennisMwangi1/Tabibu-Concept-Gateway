@@ -1,0 +1,20 @@
+{
+  "module": "maternity",
+  "source_org": "CIEL",
+  "source_id": "CIEL",
+  "description": "Complete ANC, intrapartum, and postnatal care vocabulary. Roots are CIEL's obstetric ConvSets covering obstetric history, antenatal assessments, delivery monitoring, postpartum care, and antenatal prophylaxis. These are globally standard WHO/CIEL obstetric concepts, not Kenya-specific.",
+  "roots": [
+    "161009",
+    "163461",
+    "163391",
+    "165347",
+    "160767"
+  ],
+  "notes": {
+    "161009": "Obstetric history detailed (ConvSet) — gravidity, parity, LMP, EDD, previous deliveries, complications (~158 concepts)",
+    "163461": "Monitoring after delivery (ConvSet) — postpartum maternal and newborn assessment including APGAR (~131 concepts)",
+    "163391": "Delivery assistant construct (ConvSet) — intrapartum monitoring, labour progress, delivery mode (~195 concepts)",
+    "165347": "Antenatal supplement/prophylaxis construct (ConvSet) — iron, folic acid, IPT, TT vaccination, vitamin A (~83 concepts)",
+    "160767": "Antenatal HIV test construct (ConvSet) — HIV testing, PMTCT, partner testing during ANC (~21 concepts)"
+  }
+}

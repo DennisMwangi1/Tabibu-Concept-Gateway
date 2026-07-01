@@ -1,0 +1,38 @@
+{
+  "module": "pharmacy",
+  "source_org": "CIEL",
+  "source_id": "CIEL",
+  "description": "Complete drug formulary and prescription metadata. Roots are CIEL's MedSet hierarchy covering all therapeutic categories relevant to general-purpose hospital pharmacy. Drug order metadata (routes, frequencies, forms) are included as ConvSet roots so prescribing workflows have complete answer sets. The gateway delivers the subset appropriate to each hospital's provisioned modules.",
+  "roots": [
+    "1085",
+    "1159",
+    "1158",
+    "5839",
+    "1195",
+    "1197",
+    "1881",
+    "163395",
+    "780",
+    "5279",
+    "5843",
+    "162394",
+    "160855",
+    "1519"
+  ],
+  "notes": {
+    "1085": "Antiretroviral drugs (MedSet) — all ARV agents and regimens (~201 concepts)",
+    "1159": "Tuberculosis treatment drugs (MedSet) — full TB regimen (~55 concepts)",
+    "1158": "Tuberculosis prophylactic drugs (MedSet) — IPT/TPT agents (~6 concepts)",
+    "5839": "Antimalarial medications (MedSet) — ACTs, chloroquine, primaquine, etc. (~59 concepts)",
+    "1195": "Antibiotics (MedSet) — broad-spectrum antibacterials (~11 concepts)",
+    "1197": "Vaccinations (MedSet) — immunisation schedule drugs (~116 concepts)",
+    "1881": "Antipyretic medications (MedSet) — paracetamol, ibuprofen, etc. (~24 concepts)",
+    "163395": "Deworming / anti-parasitic drugs (MedSet) — albendazole, mebendazole, etc. (~53 concepts)",
+    "780": "Oral contraception (MedSet) — combined oral contraceptive pills (~5 concepts)",
+    "5279": "Injectable contraceptives (MedSet) — DMPA, NET-EN (~16 concepts)",
+    "5843": "Minerals and iron supplements (MedSet) — ferrous sulphate, folic acid, etc. (~5 concepts)",
+    "162394": "Routes of administration (ConvSet) — oral, IV, IM, topical, etc. (~152 concepts)",
+    "160855": "Medication frequency (ConvSet) — once daily, twice daily, PRN, etc. (~154 concepts)",
+    "1519": "Medication form (ConvSet) — tablet, syrup, injection, capsule, etc."
+  }
+}

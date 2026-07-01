@@ -1,0 +1,16 @@
+{
+  "module": "core",
+  "source_org": "CIEL",
+  "source_id": "CIEL",
+  "description": "Universal clinical vocabulary shared across every Tabibu hospital: vital signs, visit diagnoses, and clinical assessment structure. These concepts are globally standard — they do not require Kenya/SHA-specific curation.",
+  "roots": [
+    "1114",
+    "159947",
+    "1729"
+  ],
+  "notes": {
+    "1114": "Vital signs (ConvSet) — cascades to all vital sign questions and answer sets (~93 concepts)",
+    "159947": "Visit diagnoses (ConvSet) — cascades to provisional/final diagnosis structure and ICD-10 mapped findings (~112 concepts)",
+    "1729": "Sign/symptom present — cascades to clinical assessment and symptom documentation concepts (~28 concepts)"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "name": "tabibu-concept-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tabibu Concept Gateway — OCL-to-hospital concept sync service",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "packaging:closure": "tsx packaging-ci/runClosure.ts",
+    "packaging:fix-leaks": "tsx packaging-ci/runClosure.ts --auto-promote",
+    "packaging:update-refs": "tsx packaging-ci/updateCollectionRefs.ts",
+    "packaging:release": "tsx packaging-ci/releaseVersions.ts",
+    "packaging:run": "tsx packaging-ci/runAll.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "adm-zip": "^0.5.16",
+    "axios": "^1.8.4",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "node-cron": "^3.0.3",
+    "pino": "^9.6.0",
+    "pino-http": "^10.4.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.13.10",
+    "@types/node-cron": "^3.0.11",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.9"
+  }
+}
