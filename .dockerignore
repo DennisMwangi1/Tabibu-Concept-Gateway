@@ -1,0 +1,14 @@
+node_modules
+dist
+.cache
+admin
+.git
+.gitignore
+*.md
+.env
+.env.*
+!.env.example
+!.env.docker.example
+test
+coverage
+terminals

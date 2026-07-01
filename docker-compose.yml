@@ -1,0 +1,61 @@
+# Tabibu Concept Gateway + Admin UI
+#
+# Local:
+#   cp .env.docker.example .env   # fill in values
+#   docker compose up -d --build
+#
+# Dokploy:
+#   1. Create a Compose application pointing at this repo
+#   2. Set environment variables from .env.docker.example in the Dokploy UI
+#   3. Assign domains in Traefik:
+#        gateway → port 3100  (hospital sync + admin API)
+#        admin   → port 80    (static admin UI)
+#   4. Set VITE_GATEWAY_URL to the gateway's public URL
+#   5. Set ADMIN_CORS_ORIGINS to the admin UI's public URL
+#   6. Rebuild after changing VITE_* vars (they are compile-time)
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_PORT:-3100}:3100"
+    env_file:
+      - .env
+    environment:
+      PORT: 3100
+      NODE_ENV: production
+      BUNDLE_CACHE_DIR: /app/.cache/bundles
+    volumes:
+      - bundle-cache:/app/.cache/bundles
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+      args:
+        VITE_GATEWAY_URL: ${VITE_GATEWAY_URL:-http://localhost:3100}
+        VITE_ADMIN_API_KEY: ${ADMIN_API_KEY:-tabibu-admin-dev-key}
+    restart: unless-stopped
+    ports:
+      - "${ADMIN_PORT:-8080}:80"
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+volumes:
+  bundle-cache:
