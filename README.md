@@ -7,10 +7,10 @@ Node/TypeScript service that sits between [Open Concept Lab (OCL)](https://openc
 ## How it works
 
 ```
-CIEL (global standard terminology)
-    └─► manifests/*.json         curated ConvSet root IDs per clinical domain
-            └─► packaging CI     expands roots → full closure via OCL $cascade
-                    └─► OCL collections  tabibu-core / lab / pharmacy / maternity
+moduleDefinitions.ts      single source of truth for all clinical modules
+    └─► manifests/*.json  curated CIEL root concept IDs per module (validated by packaging:validate)
+            └─► packaging CI  expands roots → full closure via OCL $cascade
+                    └─► OCL collections  tabibu-core / tabibu-lab / tabibu-pharmacy / …
                                 └─► gateway  fetches exports, transforms, caches
                                         └─► hospital  upserts concept_* tables
 ```
@@ -46,13 +46,24 @@ npm install
 npm run dev            # Vite dev server on port 5173
 ```
 
-Open `http://localhost:5173` — dashboard, hospital list, detail, and version management.
+Open `http://localhost:5173` — dashboard, hospital list, detail, and version management. The UI fetches module metadata from `GET /admin/modules` so the module list, labels, and chip colours are always in sync with the gateway config.
 
 ---
 
-## Module → collection mapping
+## Module system
 
-`tabibu-core` is always included. Other collections are derived from provisioned app modules:
+### Source of truth
+
+The module system has a clear two-layer separation:
+
+| File | Role |
+|---|---|
+| `src/config/moduleDefinitions.ts` | **Pure data.** `ConceptModule` interface + `CONCEPT_MODULES` array. The only place to add or modify a module. |
+| `src/config/modules.ts` | **Operational layer.** Imports from `moduleDefinitions.ts` and builds all derived lookup maps and helpers used at runtime. |
+
+### Current modules
+
+`tabibu-core` is always included for every hospital. Other collections are derived from provisioned app modules:
 
 | App module | OCL collection | Contents |
 |---|---|---|
@@ -61,7 +72,36 @@ Open `http://localhost:5173` — dashboard, hospital list, detail, and version m
 | `pharmacy` | `tabibu-pharmacy` | Drug formulary — ARVs, TB, antimalarials, antibiotics, vaccines, … |
 | `maternity` | `tabibu-maternity` | ANC, obstetric history, intrapartum, postnatal care |
 
-Mapping lives in `src/config/modules.ts`.
+### Adding a new module
+
+1. Add an entry to `src/config/moduleDefinitions.ts`
+2. Create `manifests/{manifestModule}.json` with all required fields (see below)
+3. Run `npm run packaging:validate` — validates the manifest and upserts the `collections` row automatically
+4. Run the full packaging pipeline: `npm run packaging:run -- --version vX.Y.Z`
+
+### Manifest format
+
+Every entry in `CONCEPT_MODULES` must have a corresponding `manifests/{manifestModule}.json`. The file must contain all five fields:
+
+```json
+{
+  "module": "lab",
+  "source_org": "CIEL",
+  "description": "Human-readable description of the module's concept scope.",
+  "roots": ["1271"],
+  "notes": {
+    "1271": "Tests ordered (ConvSet) — CIEL's top-level root for all orderable investigations."
+  }
+}
+```
+
+| Field | Requirement |
+|---|---|
+| `module` | Must match the filename (without `.json`) |
+| `source_org` | Non-empty string — OCL org that owns the source (e.g. `CIEL`) |
+| `description` | Non-empty string |
+| `roots` | Non-empty array of concept IDs |
+| `notes` | Object whose keys are exactly the set of `roots` IDs (every root annotated, no orphans) |
 
 ---
 
@@ -142,6 +182,14 @@ All admin endpoints require the `x-admin-api-key` header.
 x-admin-api-key: <ADMIN_API_KEY from .env>
 ```
 
+### Modules
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/admin/modules` | Module catalog — labels, descriptions, chip colours for all provisionable modules |
+
+The admin UI calls this on startup to populate module pickers and chips. Adding a module to `moduleDefinitions.ts` is all that is needed for the UI to pick it up.
+
 ### Hospitals
 
 | Method | Path | Description |
@@ -176,7 +224,7 @@ x-admin-api-key: <ADMIN_API_KEY from .env>
 | Method | Path | Description |
 |---|---|---|
 | GET | `/admin/collections` | List all collections with latest versions |
-| GET | `/admin/collections/:id/versions` | All released versions for a collection (used for dropdowns) |
+| GET | `/admin/collections/:id/versions` | All released versions for a collection |
 | GET | `/admin/packaging/status` | OCL export readiness per collection |
 
 ### Registering a hospital (via API)
@@ -206,11 +254,31 @@ npm run packaging:run -- --version v1.1.0
 
 Runs the full pipeline in order, failing fast on any step:
 
-1. **Closure + leak detection** — validates manifests and dependency graph
-2. **Push references** — updates OCL collections (`cascade=sourcetoconcepts`, clears old refs first)
-3. **Release + pre-warm** — cuts versions on OCL, polls until each export ZIP is ready, then updates Supabase directly
+| Step | Command | What it does |
+|---|---|---|
+| 1 | `packaging:validate` | Validates every module manifest; syncs `collections` table |
+| 2 | `packaging:closure` | Computes dependency closure via OCL `$cascade`; detects core leaks |
+| 3 | `packaging:update-refs` | Pushes frozen concept references to OCL collections |
+| 4 | `packaging:release` | Cuts versioned OCL releases, pre-warms export ZIPs, updates Supabase |
 
 ### Individual steps
+
+#### 0. Validate module manifests
+
+```bash
+npm run packaging:validate           # validate + sync collections table
+npm run packaging:validate -- --dry-run  # validate only, no DB write
+```
+
+Checks every entry in `CONCEPT_MODULES` against its manifest file. Fails fast with a clear error if:
+- A manifest file is missing
+- Any required field (`module`, `source_org`, `description`, `roots`, `notes`) is absent or empty
+- `roots` is an empty array
+- `notes` keys do not exactly match `roots` (missing annotation or orphan key)
+
+Also warns on any manifest files that have no corresponding `CONCEPT_MODULES` entry.
+
+On success, upserts the `collections` table so the gateway DB stays in sync with the module config. Requires `SUPABASE_SERVICE_ROLE_KEY`; skips the DB write with a warning if absent.
 
 #### 1. Validate closures + leak detection
 
@@ -221,7 +289,7 @@ npm run packaging:closure
 Loads `manifests/*.json`, calls OCL `$cascade` for each root concept ID, builds the full dependency graph, and runs two checks:
 
 - **Core split** — concepts appearing in ≥2 module closures are promoted to `tabibu-core`; the rest remain module-specific
-- **Leak detection** — walks every Q-AND-A / CONCEPT-SET edge in the graph; if a core concept directly references a module-only concept, that is a *leak* — a hospital without that module would receive an incomplete answer set
+- **Leak detection** — if a core concept directly references a module-only concept via Q-AND-A or CONCEPT-SET, that is a *leak* — a hospital without that module would receive an incomplete answer set
 
 Exits non-zero on any violation.
 
@@ -238,7 +306,7 @@ npm run packaging:closure     # re-run to confirm clean
 npm run packaging:update-refs
 ```
 
-Pushes the computed concept sets to the OCL collections as declarative references with `cascade=sourcetoconcepts`. Clears existing references first (OCL does not update cascade mode on existing refs).
+Pushes the computed concept sets to OCL collections as declarative references with `cascade=sourcetoconcepts`. Clears existing references first (OCL does not update cascade mode on existing refs).
 
 #### 3. Release a version
 
@@ -247,8 +315,8 @@ npm run packaging:release                     # cuts v1.0.0
 npm run packaging:release -- --version v1.1.0 # cuts a specific version
 ```
 
-Cuts a released version on every OCL collection, pre-warms OCL export ZIPs (polls until ready — large collections can take several minutes), then writes directly to Supabase:
-- `collections.latest_version` updated for all four collections
+Cuts a released version on every OCL collection, pre-warms export ZIPs (polls until ready — large collections can take several minutes), then writes directly to Supabase:
+- `collections.latest_version` updated for all collections
 - A row inserted into `collection_versions` for each (powers the admin version dropdowns)
 
 Requires `SUPABASE_SERVICE_ROLE_KEY` in `.env`.
@@ -267,8 +335,12 @@ Run in order against your Supabase project:
 #    Paste supabase/seed.sql
 
 # 3. Apply any pending migrations in supabase/migrations/
-#    (unique KMHFL index, RLS fixes, backfill migrations)
+
+# 4. Sync collections table to current module config
+npm run packaging:validate
 ```
+
+> **Note:** `seed.sql` is a fallback for first-time setup. After that, `packaging:validate` is the authoritative way to keep the `collections` table in sync with `moduleDefinitions.ts`.
 
 ---
 
@@ -279,7 +351,7 @@ Run in order against your Supabase project:
 | `PORT` | No (default 3100) | HTTP port |
 | `SUPABASE_URL` | Yes | Gateway Supabase project URL |
 | `SUPABASE_PUBLISHABLE_KEY` | Yes | Supabase publishable key — used by the runtime gateway (respects RLS) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Packaging CI only | Bypasses RLS for version writes; required for `packaging:release` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Packaging CI only | Bypasses RLS; required for `packaging:validate` (sync), `packaging:release` |
 | `OCL_BASE_URL` | No (default OCL public) | Override to point at a self-hosted OCL deployment |
 | `OCL_ORG` | Yes | OCL organisation name (e.g. `Tabibu`) |
 | `OCL_API_TOKEN` | Packaging CI only | Required for authoring/curation writes; read-only bundle fetching works without it |
@@ -300,9 +372,3 @@ Run in order against your Supabase project:
 ## Self-hosted OCL
 
 Set `OCL_BASE_URL` and `OCL_ORG` to your self-hosted deployment — no code changes needed.
-
----
-
-## SNOMED add-on
-
-`manifests/snomed-addon.json` exists but is empty until a SNOMED CT licence is in place. The `tabibu-snomed-addon` collection is registered in the seed but has no concepts.

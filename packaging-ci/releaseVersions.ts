@@ -18,14 +18,10 @@
 import { createClient } from "@supabase/supabase-js";
 import { oclClient } from "../src/ocl/client.js";
 import { warmCollectionExport } from "../src/ocl/exportFetcher.js";
+import { RELEASE_COLLECTIONS } from "../src/config/modules.js";
 import { env } from "../src/config/env.js";
 
-const COLLECTIONS = [
-  "tabibu-core",
-  "tabibu-lab",
-  "tabibu-pharmacy",
-  "tabibu-maternity",
-];
+const COLLECTIONS = [...RELEASE_COLLECTIONS];
 
 function parseVersion(): string {
   const flag = process.argv.indexOf("--version");

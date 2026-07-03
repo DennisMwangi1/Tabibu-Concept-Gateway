@@ -32,16 +32,11 @@ import { join } from "node:path";
 import { computeClosure, computeCoreSplit } from "../src/packaging/closure.js";
 import { loadManifest } from "../src/packaging/manifest.js";
 import { env } from "../src/config/env.js";
+import { MANIFEST_MODULE_TO_COLLECTION } from "../src/config/modules.js";
 import { oclClient } from "../src/ocl/client.js";
 
-/** OCL collection ID each module maps to. */
-const MODULE_TO_COLLECTION: Record<string, string> = {
-  core: "tabibu-core",
-  lab: "tabibu-lab",
-  pharmacy: "tabibu-pharmacy",
-  maternity: "tabibu-maternity",
-  "snomed-addon": "tabibu-snomed-addon",
-};
+// Derived directly from CONCEPT_MODULES via modules.ts — no manual sync needed.
+const MODULE_TO_COLLECTION: Record<string, string> = MANIFEST_MODULE_TO_COLLECTION;
 
 /** Expressions per request — OCL accepts multiple per call. */
 const BATCH_SIZE = 25;

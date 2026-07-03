@@ -11,11 +11,17 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import ModuleChip from "../components/ModuleChip";
 import StatusBadge from "../components/StatusBadge";
+import { useModuleCatalog } from "../hooks/useModuleCatalog";
 import { api } from "../lib/api";
 import type { HospitalSummary } from "../lib/types";
 
 export default function HospitalList() {
   const [search, setSearch] = useState("");
+  const { data: catalog } = useModuleCatalog();
+
+  const collectionToAppModule = new Map(
+    (catalog?.modules ?? []).map((m) => [m.collection_id, m.app_module]),
+  );
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["hospitals"],
@@ -163,18 +169,13 @@ export default function HospitalList() {
                               !s.collection_id.includes("snomed"),
                           )
                           .map((s) => {
-                            const mod = s.collection_id
-                              .replace("tabibu-", "")
-                              .replace("-", "");
-                            const moduleMap: Record<string, string> = {
-                              lab: "laboratory",
-                              pharmacy: "pharmacy",
-                              maternity: "maternity",
-                            };
+                            const appModule =
+                              collectionToAppModule.get(s.collection_id);
+                            if (!appModule) return null;
                             return (
                               <ModuleChip
                                 key={s.collection_id}
-                                module={moduleMap[mod] ?? mod}
+                                module={appModule}
                                 size="sm"
                               />
                             );

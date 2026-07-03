@@ -16,18 +16,14 @@ import SyncLogTable from "../components/SyncLogTable";
 import UpgradeAllButton from "../components/UpgradeAllButton";
 import UpgradeReportsTable from "../components/UpgradeReportsTable";
 import { api } from "../lib/api";
-
-const AVAILABLE_MODULES = [
-  { id: "laboratory", label: "Laboratory" },
-  { id: "pharmacy", label: "Pharmacy" },
-  { id: "maternity", label: "Maternity" },
-];
+import { useModuleCatalog } from "../hooks/useModuleCatalog";
 
 export default function HospitalDetail() {
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const [addingModule, setAddingModule] = useState(false);
   const [selectedModule, setSelectedModule] = useState("");
+  const { data: catalog } = useModuleCatalog();
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["hospital", id],
@@ -99,8 +95,8 @@ export default function HospitalDetail() {
   const { hospital, modules, subscriptions, recent_sync_log } = data;
   const activeModules = modules.filter((m) => !m.disabled_at);
   const activeModuleIds = new Set(activeModules.map((m) => m.app_module));
-  const availableToAdd = AVAILABLE_MODULES.filter(
-    (m) => !activeModuleIds.has(m.id),
+  const availableToAdd = (catalog?.modules ?? []).filter(
+    (m) => !activeModuleIds.has(m.app_module),
   );
 
   return (
@@ -200,7 +196,7 @@ export default function HospitalDetail() {
                 >
                   <option value="">Select module…</option>
                   {availableToAdd.map((m) => (
-                    <option key={m.id} value={m.id}>
+                    <option key={m.app_module} value={m.app_module}>
                       {m.label}
                     </option>
                   ))}

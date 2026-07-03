@@ -3,60 +3,24 @@ import { motion } from "framer-motion";
 import { ArrowLeft, Building2, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useModuleCatalog } from "../hooks/useModuleCatalog";
 import { api } from "../lib/api";
-
-const MODULES = [
-  {
-    id: "laboratory",
-    label: "Laboratory",
-    description: "Lab tests, panels, orderable items",
-    color: "blue",
-  },
-  {
-    id: "pharmacy",
-    label: "Pharmacy",
-    description: "Drug formulary — ARVs, antibiotics, vaccines",
-    color: "purple",
-  },
-  {
-    id: "maternity",
-    label: "Maternity",
-    description: "ANC, obstetric history, intrapartum, postnatal",
-    color: "rose",
-  },
-];
-
-const COLOR_MAP: Record<string, { border: string; bg: string; text: string; check: string }> = {
-  blue: {
-    border: "border-blue-300",
-    bg: "bg-blue-50",
-    text: "text-blue-700",
-    check: "bg-blue-600",
-  },
-  purple: {
-    border: "border-purple-300",
-    bg: "bg-purple-50",
-    text: "text-purple-700",
-    check: "bg-purple-600",
-  },
-  rose: {
-    border: "border-rose-300",
-    bg: "bg-rose-50",
-    text: "text-rose-700",
-    check: "bg-rose-600",
-  },
-};
 
 export default function RegisterHospital() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { data: catalog, isLoading: catalogLoading } = useModuleCatalog();
   const [name, setName] = useState("");
   const [kmhfl_code, setKmhflCode] = useState("");
   const [selectedModules, setSelectedModules] = useState<string[]>([]);
 
   const mutation = useMutation({
     mutationFn: () =>
-      api.hospitals.register({ name, kmhfl_code: kmhfl_code || undefined, modules: selectedModules }),
+      api.hospitals.register({
+        name,
+        kmhfl_code: kmhfl_code || undefined,
+        modules: selectedModules,
+      }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["hospitals"] });
       navigate(`/hospitals/${data.hospital.id}`);
@@ -138,8 +102,8 @@ export default function RegisterHospital() {
               App Modules
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              <strong>tabibu-core</strong> is always included. Select additional
-              modules to provision.
+              <strong>{catalog?.core.label ?? "Core"}</strong> is always
+              included. Select additional modules to provision.
             </p>
           </div>
 
@@ -149,54 +113,59 @@ export default function RegisterHospital() {
               <CheckCircle2 className="h-3.5 w-3.5 text-white" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-medium text-brand-800">Core</p>
+              <p className="text-sm font-medium text-brand-800">
+                {catalog?.core.label ?? "Core"}
+              </p>
               <p className="text-xs text-brand-600">
-                Vital signs, visit diagnoses, clinical assessment — always
-                included
+                {catalog?.core.description ??
+                  "Vital signs, visit diagnoses, clinical assessment — always included"}
               </p>
             </div>
             <span className="text-xs text-brand-600 font-medium">Required</span>
           </div>
 
           {/* Optional modules */}
-          {MODULES.map((m) => {
-            const colors = COLOR_MAP[m.color];
-            const selected = selectedModules.includes(m.id);
-            return (
-              <motion.button
-                key={m.id}
-                whileTap={{ scale: 0.99 }}
-                onClick={() => toggleModule(m.id)}
-                className={`w-full flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all ${
-                  selected
-                    ? `${colors.border} ${colors.bg}`
-                    : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
-                }`}
-              >
-                <div
-                  className={`h-5 w-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+          {catalogLoading ? (
+            <div className="h-16 rounded-xl bg-slate-100 animate-pulse" />
+          ) : (
+            catalog?.modules.map((m) => {
+              const selected = selectedModules.includes(m.app_module);
+              return (
+                <motion.button
+                  key={m.app_module}
+                  whileTap={{ scale: 0.99 }}
+                  onClick={() => toggleModule(m.app_module)}
+                  className={`w-full flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all ${
                     selected
-                      ? `${colors.check} border-transparent`
-                      : "border-slate-300"
+                      ? `${m.chip_color} border-current`
+                      : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
                   }`}
                 >
-                  {selected && (
-                    <CheckCircle2 className="h-3.5 w-3.5 text-white" />
-                  )}
-                </div>
-                <div className="flex-1">
-                  <p
-                    className={`text-sm font-medium ${selected ? colors.text : "text-slate-800"}`}
+                  <div
+                    className={`h-5 w-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                      selected
+                        ? "bg-brand-600 border-transparent"
+                        : "border-slate-300"
+                    }`}
                   >
-                    {m.label}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {m.description}
-                  </p>
-                </div>
-              </motion.button>
-            );
-          })}
+                    {selected && (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-white" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <p
+                      className={`text-sm font-medium ${selected ? "" : "text-slate-800"}`}
+                    >
+                      {m.label}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {m.description}
+                    </p>
+                  </div>
+                </motion.button>
+              );
+            })
+          )}
         </div>
 
         {/* Summary */}
@@ -207,16 +176,21 @@ export default function RegisterHospital() {
             className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm text-slate-600"
           >
             <p>
-              Registering <strong className="text-slate-900">{name || "…"}</strong>
-              {kmhfl_code && (
-                <span> ({kmhfl_code})</span>
-              )}{" "}
+              Registering{" "}
+              <strong className="text-slate-900">{name || "…"}</strong>
+              {kmhfl_code && <span> ({kmhfl_code})</span>}{" "}
               with{" "}
               <strong className="text-slate-900">
                 {selectedModules.length + 1}
               </strong>{" "}
               module{selectedModules.length !== 0 ? "s" : ""} (core
-              {selectedModules.map((m) => `, ${m}`).join("")}).
+              {selectedModules
+                .map((id) => {
+                  const mod = catalog?.modules.find((m) => m.app_module === id);
+                  return `, ${mod?.label ?? id}`;
+                })
+                .join("")}
+              ).
             </p>
             <p className="mt-1 text-xs text-slate-400">
               Collection subscriptions will be auto-derived after registration.

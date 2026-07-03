@@ -1,6 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { env } from "../config/env.js";
-import { CONCEPT_MODULES } from "../config/modules.js";
+import { labelForCollection } from "../config/modules.js";
+import { getModuleCatalog } from "../modules/catalog.js";
 import { getSupabase } from "../config/supabase.js";
 import { checkExportReady } from "../ocl/exportFetcher.js";
 import { NotFoundError, UnauthorizedError, ConflictError } from "../lib/errors.js";
@@ -24,6 +25,13 @@ function requireAdminKey(req: Request, _res: Response, next: NextFunction) {
 }
 
 adminRoutes.use(requireAdminKey);
+
+// ---------------------------------------------------------------------------
+// GET /admin/modules — provisionable module catalog for the admin UI
+// ---------------------------------------------------------------------------
+adminRoutes.get("/admin/modules", (_req, res) => {
+  res.json(getModuleCatalog());
+});
 
 // ---------------------------------------------------------------------------
 // GET /admin/hospitals — list all hospitals with summary stats
@@ -437,12 +445,9 @@ adminRoutes.get("/admin/collections", async (_req, res, next) => {
 
     if (error) throw error;
 
-    // Annotate with human label from CONCEPT_MODULES config.
     const withLabel = (data ?? []).map((c) => ({
       ...c,
-      label:
-        CONCEPT_MODULES.find((m) => m.collectionId === c.id)?.label ??
-        (c.is_core ? "Core" : c.id),
+      label: labelForCollection(c.id),
     }));
 
     res.json({ collections: withLabel });
@@ -467,9 +472,7 @@ adminRoutes.get("/admin/packaging/status", async (_req, res, next) => {
 
     const collections = await Promise.all(
       (data ?? []).map(async (c) => {
-        const label =
-          CONCEPT_MODULES.find((m) => m.collectionId === c.id)?.label ??
-          (c.is_core ? "Core" : c.id);
+        const label = labelForCollection(c.id);
 
         const export_ready = c.latest_version
           ? await checkExportReady(env.OCL_ORG, c.id, c.latest_version)

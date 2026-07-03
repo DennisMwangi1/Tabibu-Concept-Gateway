@@ -133,6 +133,22 @@ export interface CollectionsResponse {
   collections: Collection[];
 }
 
+export interface ModuleCatalogResponse {
+  core: {
+    collection_id: string;
+    label: string;
+    description: string;
+    chip_color: string;
+  };
+  modules: Array<{
+    app_module: string;
+    collection_id: string;
+    label: string;
+    description: string;
+    chip_color: string;
+  }>;
+}
+
 export interface PackagingCollectionStatus {
   id: string;
   label: string;

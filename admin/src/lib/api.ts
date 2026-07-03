@@ -4,6 +4,7 @@ import type {
   CollectionsResponse,
   HospitalDetailResponse,
   HospitalListResponse,
+  ModuleCatalogResponse,
   PackagingStatusResponse,
   RegisterHospitalResponse,
   ReportsResponse,
@@ -118,5 +119,9 @@ export const api = {
 
   packaging: {
     status: () => request<PackagingStatusResponse>("/admin/packaging/status"),
+  },
+
+  modules: {
+    catalog: () => request<ModuleCatalogResponse>("/admin/modules"),
   },
 };
