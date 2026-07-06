@@ -1,0 +1,24 @@
+{
+  "module": "rehabilitation",
+  "description": "Physiotherapy and rehabilitation vocabulary. Covers functional independence assessment (FIM — the internationally standardised ADL instrument for inpatient rehabilitation), upper and lower limb sub-scores, hand mobility measurement, and pulmonary function testing (spirometry). These ConvSets map to the WHO ICF framework and carry LOINC mappings for interoperability.",
+  "sources": [
+    {
+      "source_org": "CIEL",
+      "source_id": "CIEL",
+      "roots": [
+        "168260",
+        "168309",
+        "168306",
+        "168073",
+        "168278"
+      ],
+      "notes": {
+        "168260": "Functional Independence Measure — total (ConvSet) — composite FIM score construct covering all 18 ADL domains: self-care, sphincter control, transfer, locomotion, communication, and social cognition (~20 concepts)",
+        "168309": "FIM lower limb construct (ConvSet) — lower extremity FIM sub-scores: transfers (bed/chair/wheelchair, toilet, tub/shower), locomotion (walk/wheelchair, stairs) (~10 concepts)",
+        "168306": "FIM upper limb construct (ConvSet) — upper extremity FIM sub-scores: self-care items (eating, grooming, bathing, dressing upper/lower body, toileting) (~8 concepts)",
+        "168073": "Spirometry results set (ConvSet) — pulmonary function test values: FEV1, FVC, FEV1/FVC ratio, PEFR, and bronchodilator response; carries LOINC mappings (~10 concepts)",
+        "168278": "Hand analytic mobility questions (ConvSet) — hand and grip strength measurement items used in hand therapy and orthopaedic rehabilitation assessment (~8 concepts)"
+      }
+    }
+  ]
+}

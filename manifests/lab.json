@@ -1,12 +1,16 @@
 {
   "module": "lab",
-  "source_org": "CIEL",
-  "source_id": "CIEL",
   "description": "Complete laboratory test catalogue. The single root 1271 (Tests ordered) is CIEL's canonical entry point for all orderable lab investigations — it cascades to the full set of ~718 test concepts including CBC, HIV, malaria, renal, liver, TB, urinalysis, radiology orders, and all associated LabSet panels. The gateway delivers only the subset the hospital's tier/modules require.",
-  "roots": [
-    "1271"
-  ],
-  "notes": {
-    "1271": "Tests ordered (ConvSet) — CIEL's top-level root for all orderable investigations. Cascades to ~718 concepts covering haematology, chemistry, serology, microbiology, urinalysis, radiology orders, and all nested LabSet panels (CBC, CD4, metabolic, etc.)"
-  }
+  "sources": [
+    {
+      "source_org": "CIEL",
+      "source_id": "CIEL",
+      "roots": [
+        "1271"
+      ],
+      "notes": {
+        "1271": "Tests ordered (ConvSet) — CIEL's top-level root for all orderable investigations. Cascades to ~718 concepts covering haematology, chemistry, serology, microbiology, urinalysis, radiology orders, and all nested LabSet panels (CBC, CD4, metabolic, etc.)"
+      }
+    }
+  ]
 }

@@ -1,0 +1,18 @@
+{
+  "module": "mental-health",
+  "description": "Psychiatry and mental health vocabulary. Covers therapy session documentation and the Clinical Global Impression — Severity scale (CGI-S), which is the most widely used psychiatrist-rated global severity instrument. Mental health diagnoses (ICD-10 F-codes, SNOMED 74732009 descendants) are already covered via CIEL SAME-AS mappings in concept_reference_maps. A comprehensive set of standardised psychiatric assessment instruments (PHQ-9, GAD-7, AUDIT, DAST, CAGE, PANSS) requires Tabibu-authored ConvSets — tracked as Path B curation work.",
+  "sources": [
+    {
+      "source_org": "CIEL",
+      "source_id": "CIEL",
+      "roots": [
+        "167693",
+        "167800"
+      ],
+      "notes": {
+        "167693": "Session attended (ConvSet) — therapy session type and attendance tracking construct covering session type (individual/group/family therapy), attendance status, session frequency, and provider type (~10 concepts)",
+        "167800": "Clinical Global Impression — Severity (CGI-S) set (ConvSet) — 7-point psychiatrist-rated symptom severity scale: Not assessed, Normal, Borderline ill, Mildly ill, Moderately ill, Markedly ill, Severely ill, Extremely ill (~8 concepts)"
+      }
+    }
+  ]
+}

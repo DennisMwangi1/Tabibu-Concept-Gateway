@@ -28,6 +28,10 @@ export function isQAndAMapType(mapType: string): boolean {
   return normalized === "Q-AND-A" || normalized === "Q-AND-A-MAP";
 }
 
+export function isSameAsMapType(mapType: string): boolean {
+  return mapType.toUpperCase().trim() === "SAME-AS";
+}
+
 export async function fetchQAndAMappings(
   org: string,
   source: string,
@@ -44,5 +48,36 @@ export async function fetchQAndAMappings(
 
   return (res.data as OclMappingRow[]).filter(
     (m) => !m.retired && isQAndAMapType(String(m.map_type ?? "")),
+  );
+}
+
+/**
+ * Fetches SAME-AS mappings for a concept. Used by the de-duplication pass
+ * to detect semantically equivalent concepts across different sources
+ * (e.g. CIEL 5089 SAME-AS PIH 1106 — both meaning "Fever").
+ *
+ * Only returns mappings where `to_concept_url` is set — external code
+ * mappings (ICD-10, SNOMED) typically have a null `to_concept_url` and
+ * are irrelevant for URL-level de-duplication.
+ */
+export async function fetchSameAsMappings(
+  org: string,
+  source: string,
+  conceptId: string,
+): Promise<OclMappingRow[]> {
+  const res = await oclClient.get(
+    `/orgs/${org}/sources/${source}/concepts/${conceptId}/mappings/`,
+    { params: { mapType: "SAME-AS" } },
+  );
+
+  if (res.status !== 200 || !Array.isArray(res.data)) {
+    return [];
+  }
+
+  return (res.data as OclMappingRow[]).filter(
+    (m) =>
+      !m.retired &&
+      isSameAsMapType(String(m.map_type ?? "")) &&
+      m.to_concept_url != null,
   );
 }

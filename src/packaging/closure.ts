@@ -1,5 +1,9 @@
 import { fetchCascade } from "../ocl/exportFetcher.js";
-import { fetchQAndAMappings, parseConceptUrl } from "../ocl/qandaMappings.js";
+import {
+  fetchQAndAMappings,
+  fetchSameAsMappings,
+  parseConceptUrl,
+} from "../ocl/qandaMappings.js";
 import { env } from "../config/env.js";
 
 const DEFAULT_SOURCE = "Tabibu";
@@ -120,6 +124,108 @@ export async function expandSharedCore(
   source = DEFAULT_SOURCE,
 ): Promise<Set<string>> {
   return computeClosure(sharedUuids, org, source);
+}
+
+// ---------------------------------------------------------------------------
+// Cross-source SAME-AS de-duplication
+// ---------------------------------------------------------------------------
+
+/**
+ * Source priority for canonical URL selection. When two concepts in the
+ * closure are linked by a SAME-AS mapping, the one whose source appears
+ * earlier in this list (lower index) is kept.
+ *
+ * CIEL is authoritative because it already carries SAME-AS mappings back to
+ * LOINC, ICD-10, and SNOMED — keeping CIEL URLs means those external
+ * reference maps are preserved in the released collection exports.
+ */
+const CANONICAL_SOURCES = [
+  "CIEL",
+  "LOINC",
+  "ICD-10-WHO",
+  "SNOMED",
+  "PIH",
+  "AMPATH",
+] as const;
+
+function canonicalPriority(url: string): number {
+  const parsed = parseConceptUrl(url);
+  if (!parsed) return CANONICAL_SOURCES.length + 1;
+  const idx = CANONICAL_SOURCES.findIndex(
+    (s) => s.toLowerCase() === parsed.source.toLowerCase(),
+  );
+  return idx === -1 ? CANONICAL_SOURCES.length : idx;
+}
+
+/**
+ * Removes semantically duplicate concepts from a closure that spans multiple
+ * sources. Two concepts are considered duplicates when OCL has a SAME-AS
+ * mapping between them AND both URLs are already present in the closure.
+ *
+ * Uses union-find with source-priority ranking so CIEL always wins over PIH,
+ * PIH over AMPATH, etc. Only call this for closures derived from 2+ sources
+ * — for single-source closures there can be no inter-source duplicates.
+ *
+ * Returns the de-duplicated Set and a count of removed URLs for logging.
+ */
+export async function deduplicateSameAs(closure: Set<string>): Promise<{
+  deduplicated: Set<string>;
+  removed: number;
+}> {
+  if (closure.size === 0) return { deduplicated: new Set(), removed: 0 };
+
+  // Union-Find — each concept starts as its own canonical representative.
+  const parent = new Map<string, string>(
+    [...closure].map((url) => [url, url]),
+  );
+
+  function find(x: string): string {
+    // Iterative path-halving
+    while (parent.get(x) !== x) {
+      const gp = parent.get(parent.get(x)!);
+      if (gp) parent.set(x, gp);
+      x = parent.get(x)!;
+    }
+    return x;
+  }
+
+  function union(a: string, b: string): void {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra === rb) return;
+    // Lower canonicalPriority index = higher authority = becomes the root.
+    if (canonicalPriority(ra) <= canonicalPriority(rb)) {
+      parent.set(rb, ra);
+    } else {
+      parent.set(ra, rb);
+    }
+  }
+
+  // For each concept, fetch outgoing SAME-AS mappings and union any pair
+  // where both ends are already in the closure.
+  for (const url of closure) {
+    const parsed = parseConceptUrl(url);
+    if (!parsed) continue;
+
+    const mappings = await fetchSameAsMappings(
+      parsed.org,
+      parsed.source,
+      parsed.conceptId,
+    );
+
+    for (const m of mappings) {
+      if (!m.to_concept_url || !closure.has(m.to_concept_url)) continue;
+      union(url, m.to_concept_url);
+    }
+  }
+
+  // Collect one canonical URL per equivalence class.
+  const deduplicated = new Set<string>();
+  for (const url of closure) {
+    deduplicated.add(find(url));
+  }
+
+  return { deduplicated, removed: closure.size - deduplicated.size };
 }
 
 export function computeCoreSplit(

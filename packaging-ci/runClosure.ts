@@ -22,7 +22,7 @@ import {
   detectLeaks,
   type LeakViolation,
 } from "../src/packaging/leakDetection.js";
-import { loadManifest } from "../src/packaging/manifest.js";
+import { loadManifest, getSourceEntries } from "../src/packaging/manifest.js";
 import { env } from "../src/config/env.js";
 
 const AUTO_PROMOTE = process.argv.includes("--auto-promote");
@@ -46,7 +46,24 @@ async function promoteToCore(
 ): Promise<string[]> {
   const corePath = join(manifestsDir, "core.json");
   const raw = JSON.parse(await readFile(corePath, "utf-8"));
-  const existing = new Set<string>(raw.roots ?? []);
+
+  // Normalise to sources[] — core manifests use the multi-source format.
+  if (!Array.isArray(raw.sources) || raw.sources.length === 0) {
+    raw.sources = [
+      {
+        source_org: raw.source_org ?? "CIEL",
+        source_id: raw.source_id ?? raw.source_org ?? "CIEL",
+        roots: raw.roots ?? [],
+        notes: raw.notes ?? {},
+      },
+    ];
+  }
+
+  const primarySource = raw.sources[0] as {
+    roots: string[];
+    notes: Record<string, string>;
+  };
+  const existing = new Set<string>(primarySource.roots ?? []);
   const added: string[] = [];
 
   for (const v of violations) {
@@ -58,7 +75,14 @@ async function promoteToCore(
   }
 
   if (added.length > 0) {
-    raw.roots = [...existing];
+    primarySource.roots = [...existing];
+    if (!primarySource.notes) primarySource.notes = {};
+    for (const id of added) {
+      if (!primarySource.notes[id]) {
+        primarySource.notes[id] =
+          "Auto-promoted from leak detection — annotate with ConvSet description";
+      }
+    }
     await writeFile(corePath, JSON.stringify(raw, null, 2) + "\n", "utf-8");
   }
 
@@ -75,35 +99,42 @@ async function main() {
 
   for (const file of files) {
     const manifest = await loadManifest(join(manifestsDir, file));
+    const entries = getSourceEntries(manifest, env.OCL_ORG);
 
-    if (manifest.roots.length === 0) {
+    if (entries.length === 0) {
       console.log(`Skipping ${file} (no roots configured yet)`);
       continue;
     }
 
-    const org = manifest.source_org ?? env.OCL_ORG;
-    const source = manifest.source_id ?? "Tabibu";
-
+    const totalRoots = entries.reduce((s, e) => s + e.roots.length, 0);
+    const sourceSummary = entries.map((e) => `${e.source_org}/${e.source_id}`).join(", ");
     console.log(
-      `Computing closure for module: ${manifest.module} (source: ${org}/${source}, ${manifest.roots.length} roots)`,
+      `Computing closure for module: ${manifest.module} (source: ${sourceSummary}, ${totalRoots} roots)`,
     );
 
     try {
-      const { closure, graph } = await computeClosureWithGraph(
-        manifest.roots,
-        org,
-        source,
-      );
-      moduleClosures.set(manifest.module, closure);
-      console.log(
-        `  -> ${closure.size} concepts, ${graph.size} dependency edges`,
-      );
+      const moduleClosure = new Set<string>();
 
-      // Merge edges into the shared graph.
-      for (const [from, targets] of graph) {
-        if (!mergedGraph.has(from)) mergedGraph.set(from, new Set());
-        for (const t of targets) mergedGraph.get(from)!.add(t);
+      for (const entry of entries) {
+        const { closure, graph } = await computeClosureWithGraph(
+          entry.roots,
+          entry.source_org,
+          entry.source_id,
+        );
+
+        for (const url of closure) moduleClosure.add(url);
+
+        // Merge dependency edges from this source into the shared graph.
+        for (const [from, targets] of graph) {
+          if (!mergedGraph.has(from)) mergedGraph.set(from, new Set());
+          for (const t of targets) mergedGraph.get(from)!.add(t);
+        }
       }
+
+      moduleClosures.set(manifest.module, moduleClosure);
+      console.log(
+        `  -> ${moduleClosure.size} concepts, ${mergedGraph.size} dependency edges`,
+      );
     } catch (err) {
       console.error(`  ERROR computing closure for ${manifest.module}:`, err);
       process.exit(1);

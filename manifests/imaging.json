@@ -1,0 +1,16 @@
+{
+  "module": "imaging",
+  "description": "Radiology and medical imaging vocabulary. Root 164068 (Imaging modalities) is CIEL's ConvSet covering all standard imaging modality types used for procedure ordering and reporting — plain X-ray, CT, MRI, ultrasound, fluoroscopy, nuclear medicine, PET, and mammography. This set is the CIEL-available foundation; a full imaging procedure catalogue (e.g. individual study types per body region) requires Tabibu-authored ConvSets referencing the 130 CIEL Radiology/Imaging Procedure concepts — tracked as Path B curation work.",
+  "sources": [
+    {
+      "source_org": "CIEL",
+      "source_id": "CIEL",
+      "roots": [
+        "164068"
+      ],
+      "notes": {
+        "164068": "Imaging modalities (ConvSet) — coded answer set covering all imaging modality types used in radiology ordering and result classification (~15 modality concepts: CT, MRI, X-ray, ultrasound, fluoroscopy, nuclear medicine, PET, mammography, etc.)"
+      }
+    }
+  ]
+}

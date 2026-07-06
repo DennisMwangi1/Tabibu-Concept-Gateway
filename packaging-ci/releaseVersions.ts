@@ -9,11 +9,13 @@
  *   3. Updates `collections.latest_version` for each collection.
  *   4. Upserts a row into `collection_versions` for tracking.
  *
- * Usage (semantic versioning — MAJOR.MINOR.PATCH):
- *   npm run packaging:release -- --patch          # bug fixes        1.0.0 → 1.0.1  (default)
- *   npm run packaging:release -- --minor          # new features     1.0.0 → 1.1.0
- *   npm run packaging:release -- --major          # breaking changes 1.0.0 → 2.0.0
- *   npm run packaging:release -- --version 2.1.0  # explicit override (skips auto-fetch)
+ * Usage (semantic versioning — vMAJOR.MINOR.PATCH):
+ *   npm run packaging:release -- --patch          # bug fixes        v1.0.0 → v1.0.1  (default)
+ *   npm run packaging:release -- --minor          # new features     v1.0.0 → v1.1.0
+ *   npm run packaging:release -- --major          # breaking changes v1.0.0 → v2.0.0
+ *   npm run packaging:release -- --version v2.1.0 # explicit override (v prefix optional)
+ *
+ * Bump flags are case-insensitive (--major, --MAJOR, etc.).
  *
  * Requires SUPABASE_SERVICE_ROLE_KEY in .env (bypasses RLS for CI writes).
  */
@@ -22,45 +24,26 @@ import { oclClient } from "../src/ocl/client.js";
 import { warmCollectionExport } from "../src/ocl/exportFetcher.js";
 import { RELEASE_COLLECTIONS } from "../src/config/modules.js";
 import { env } from "../src/config/env.js";
+import {
+  bumpVersion,
+  formatVersion,
+  type SemverBump,
+} from "../src/lib/versionUtils.js";
 
 const COLLECTIONS = [...RELEASE_COLLECTIONS];
 
-type BumpType = "major" | "minor" | "patch";
-
-function parseBumpType(): BumpType {
-  if (process.argv.includes("--major")) return "major";
-  if (process.argv.includes("--minor")) return "minor";
+function parseBumpType(): SemverBump {
+  const lowered = process.argv.map((arg) => arg.toLowerCase());
+  if (lowered.includes("--major")) return "major";
+  if (lowered.includes("--minor")) return "minor";
   return "patch";
-}
-
-function bumpSemver(current: string, bump: BumpType): string {
-  const match = current.match(/^(\d+)\.(\d+)\.(\d+)$/);
-  if (!match) {
-    throw new Error(
-      `Invalid semver in database: "${current}". Expected MAJOR.MINOR.PATCH.`,
-    );
-  }
-  let major = Number(match[1]);
-  let minor = Number(match[2]);
-  let patch = Number(match[3]);
-  if (bump === "major") {
-    major++;
-    minor = 0;
-    patch = 0;
-  } else if (bump === "minor") {
-    minor++;
-    patch = 0;
-  } else {
-    patch++;
-  }
-  return `${major}.${minor}.${patch}`;
 }
 
 async function parseVersion(supabase: SupabaseClient): Promise<string> {
   // Explicit override takes priority over all bump flags.
   const versionFlag = process.argv.indexOf("--version");
   if (versionFlag !== -1 && process.argv[versionFlag + 1]) {
-    return String(process.argv[versionFlag + 1]);
+    return formatVersion(String(process.argv[versionFlag + 1]));
   }
 
   const bump = parseBumpType();
@@ -79,11 +62,11 @@ async function parseVersion(supabase: SupabaseClient): Promise<string> {
   }
 
   if (!data?.latest_version) {
-    console.log("  No previous version found in Supabase — starting at 1.0.0");
-    return "1.0.0";
+    console.log("  No previous version found in Supabase — starting at v1.0.0");
+    return "v1.0.0";
   }
 
-  const next = bumpSemver(data.latest_version, bump);
+  const next = bumpVersion(data.latest_version, bump);
   console.log(`  ${data.latest_version} → ${next} (${bump} bump)`);
   return next;
 }

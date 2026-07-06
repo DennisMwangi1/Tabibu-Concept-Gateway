@@ -1,0 +1,18 @@
+{
+  "module": "oncology",
+  "description": "Cancer care vocabulary. Covers chemotherapy session-level data collection and standardised tumour response assessment per RECIST criteria. These are the CIEL ConvSets with the broadest cascade coverage for oncology workflows; oncology diagnoses (ICD-10 C-codes) and individual drug ingredients are already carried via CIEL SAME-AS mappings and will appear in concept_reference_maps.",
+  "sources": [
+    {
+      "source_org": "CIEL",
+      "source_id": "CIEL",
+      "roots": [
+        "167876",
+        "168161"
+      ],
+      "notes": {
+        "167876": "Chemotherapy detail (ConvSet) — session-level chemotherapy data construct covering drug administration, cycle number, dose, cumulative dose, toxicity grading, and treatment intent (~20 concepts)",
+        "168161": "RECIST tumor response set (ConvSet) — Response Evaluation Criteria in Solid Tumours coded answer set: Complete Response, Partial Response, Stable Disease, Progressive Disease, and Not Evaluable (~5 concepts)"
+      }
+    }
+  ]
+}

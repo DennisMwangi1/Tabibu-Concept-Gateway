@@ -29,8 +29,12 @@
  */
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { computeClosure, computeCoreSplit } from "../src/packaging/closure.js";
-import { loadManifest } from "../src/packaging/manifest.js";
+import {
+  computeClosure,
+  computeCoreSplit,
+  deduplicateSameAs,
+} from "../src/packaging/closure.js";
+import { loadManifest, getSourceEntries } from "../src/packaging/manifest.js";
 import { env } from "../src/config/env.js";
 import { MANIFEST_MODULE_TO_COLLECTION } from "../src/config/modules.js";
 import { oclClient } from "../src/ocl/client.js";
@@ -46,6 +50,41 @@ const BATCH_PAUSE_MS = 1500;
 /** Cascade mode — sourcetoconcepts includes mappings + target concepts. */
 const CASCADE_MODE = "sourcetoconcepts";
 
+async function ensureCollectionExists(
+  org: string,
+  collectionId: string,
+): Promise<void> {
+  const check = await oclClient.get(
+    `/orgs/${org}/collections/${collectionId}/`,
+  );
+
+  if (check.status === 200) return;
+
+  if (check.status !== 404) {
+    throw new Error(
+      `Failed to check collection ${collectionId}: HTTP ${check.status} — ${JSON.stringify(check.data).slice(0, 200)}`,
+    );
+  }
+
+  console.log(`  ${collectionId}: not found in OCL — creating...`);
+  const create = await oclClient.post(`/orgs/${org}/collections/`, {
+    id: collectionId,
+    name: collectionId,
+    collection_type: "Dictionary",
+    supported_locales: "en",
+    default_locale: "en",
+    public_access: "View",
+  });
+
+  if (create.status === 201) {
+    console.log(`  ${collectionId}: created ✓`);
+  } else {
+    throw new Error(
+      `Failed to create collection ${collectionId}: HTTP ${create.status} — ${JSON.stringify(create.data).slice(0, 200)}`,
+    );
+  }
+}
+
 async function clearCollectionReferences(
   org: string,
   collectionId: string,
@@ -56,6 +95,12 @@ async function clearCollectionReferences(
     `/orgs/${org}/collections/${collectionId}/references/`,
     { data: { references: ["*"] } },
   );
+
+  if (res.status === 404) {
+    // Collection exists (ensureCollectionExists already confirmed that) but has no refs yet.
+    console.log(`  ${collectionId}: no references to clear`);
+    return;
+  }
 
   if (res.status !== 200 && res.status !== 204) {
     throw new Error(
@@ -79,6 +124,7 @@ async function addReferencesToCollection(
     return;
   }
 
+  await ensureCollectionExists(org, collectionId);
   await clearCollectionReferences(org, collectionId);
 
   let processed = 0;
@@ -139,17 +185,37 @@ async function main() {
 
   for (const file of files) {
     const manifest = await loadManifest(join(manifestsDir, file));
-    if (manifest.roots.length === 0) continue;
+    const entries = getSourceEntries(manifest, env.OCL_ORG);
 
-    const org = manifest.source_org ?? env.OCL_ORG;
-    const source = manifest.source_id ?? "Tabibu";
+    if (entries.length === 0) continue;
 
+    const sourceSummary = entries
+      .map((e) => `${e.source_org}/${e.source_id}`)
+      .join(", ");
     console.log(
-      `Computing closure for ${manifest.module} (${org}/${source})...`,
+      `Computing closure for ${manifest.module} (${sourceSummary})...`,
     );
-    const closure = await computeClosure(manifest.roots, org, source);
-    moduleClosures.set(manifest.module, closure);
-    console.log(`  -> ${closure.size} concepts`);
+
+    // Compute closure for each source and union the results.
+    let moduleClosure = new Set<string>();
+    for (const entry of entries) {
+      const c = await computeClosure(entry.roots, entry.source_org, entry.source_id);
+      for (const url of c) moduleClosure.add(url);
+    }
+
+    // Remove semantically equivalent concepts from different sources so the
+    // released export never contains both CIEL/5089 and PIH/1106 for "Fever".
+    if (entries.length > 1 && moduleClosure.size > 0) {
+      console.log(`  Deduplicating across ${entries.length} sources via SAME-AS...`);
+      const { deduplicated, removed } = await deduplicateSameAs(moduleClosure);
+      moduleClosure = deduplicated;
+      if (removed > 0) {
+        console.log(`  -> ${removed} duplicate(s) removed`);
+      }
+    }
+
+    moduleClosures.set(manifest.module, moduleClosure);
+    console.log(`  -> ${moduleClosure.size} concepts`);
   }
 
   if (moduleClosures.size === 0) {
@@ -189,8 +255,11 @@ async function main() {
   console.log(
     "OCL indexes references asynchronously — allow a few minutes before releasing.",
   );
-  console.log("Then run:");
-  console.log("  npm run packaging:release -- --version v1.x.x");
+  console.log("Then run one of:");
+  console.log("  npm run packaging:release -- --patch   # bug fixes        x.x.0 → x.x.1");
+  console.log("  npm run packaging:release -- --minor   # new features     x.0.x → x.1.0");
+  console.log("  npm run packaging:release -- --major   # breaking changes x.x.x → (x+1).0.0");
+  console.log("  npm run packaging:release -- --version 2.1.0  # explicit override");
 }
 
 main().catch((err) => {

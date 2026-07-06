@@ -34,57 +34,55 @@ const DRY_RUN = process.argv.includes("--dry-run");
 const MANIFESTS_DIR = join(import.meta.dirname, "../manifests");
 
 // ---------------------------------------------------------------------------
-// Manifest shape
+// Manifest shape — normalised internal representation
 // ---------------------------------------------------------------------------
 
-interface ValidManifest {
-  module: string;
+interface ValidSourceEntry {
   source_org: string;
-  description: string;
+  source_id: string;
   roots: string[];
   notes: Record<string, string>;
 }
 
+/**
+ * Normalised manifest — always uses a `sources` array regardless of which
+ * on-disk format was used (flat legacy or multi-source new format).
+ */
+interface ValidManifest {
+  module: string;
+  description: string;
+  /** One entry per source — at least one entry is guaranteed. */
+  sources: ValidSourceEntry[];
+}
+
 type ValidationError = { field: string; message: string };
 
-function validateManifest(
-  raw: unknown,
-  expectedModule: string,
-): { ok: true; manifest: ValidManifest } | { ok: false; errors: ValidationError[] } {
+function validateSourceEntry(
+  entry: Record<string, unknown>,
+  fieldPrefix: string,
+): { errors: ValidationError[]; valid: ValidSourceEntry | null } {
   const errors: ValidationError[] = [];
-  const data = raw as Record<string, unknown>;
 
-  if (typeof data.module !== "string" || data.module.trim() === "") {
-    errors.push({ field: "module", message: "must be a non-empty string" });
-  } else if (data.module !== expectedModule) {
+  if (typeof entry.source_org !== "string" || entry.source_org.trim() === "") {
+    errors.push({ field: `${fieldPrefix}source_org`, message: "must be a non-empty string" });
+  }
+
+  const rawRoots = entry.roots;
+  if (!Array.isArray(rawRoots) || rawRoots.length === 0) {
     errors.push({
-      field: "module",
-      message: `must equal "${expectedModule}" (got "${data.module}")`,
-    });
-  }
-
-  if (typeof data.source_org !== "string" || data.source_org.trim() === "") {
-    errors.push({ field: "source_org", message: "must be a non-empty string" });
-  }
-
-  if (typeof data.description !== "string" || data.description.trim() === "") {
-    errors.push({ field: "description", message: "must be a non-empty string" });
-  }
-
-  if (!Array.isArray(data.roots) || data.roots.length === 0) {
-    errors.push({
-      field: "roots",
+      field: `${fieldPrefix}roots`,
       message: "must be a non-empty array of concept IDs",
     });
-  } else if (!data.roots.every((r) => typeof r === "string" && r.trim() !== "")) {
-    errors.push({ field: "roots", message: "all items must be non-empty strings" });
+  } else if (!rawRoots.every((r) => typeof r === "string" && r.trim() !== "")) {
+    errors.push({ field: `${fieldPrefix}roots`, message: "all items must be non-empty strings" });
   }
 
-  if (typeof data.notes !== "object" || data.notes === null || Array.isArray(data.notes)) {
-    errors.push({ field: "notes", message: "must be an object" });
-  } else if (Array.isArray(data.roots) && data.roots.length > 0) {
-    const roots = data.roots as string[];
-    const notes = data.notes as Record<string, unknown>;
+  const rawNotes = entry.notes;
+  if (typeof rawNotes !== "object" || rawNotes === null || Array.isArray(rawNotes)) {
+    errors.push({ field: `${fieldPrefix}notes`, message: "must be an object" });
+  } else if (Array.isArray(rawRoots) && rawRoots.length > 0) {
+    const roots = rawRoots as string[];
+    const notes = rawNotes as Record<string, unknown>;
     const noteKeys = Object.keys(notes);
     const rootSet = new Set(roots);
     const noteSet = new Set(noteKeys);
@@ -94,20 +92,111 @@ function validateManifest(
 
     if (missingNotes.length > 0) {
       errors.push({
-        field: "notes",
+        field: `${fieldPrefix}notes`,
         message: `missing notes for roots: ${missingNotes.join(", ")}`,
       });
     }
     if (orphanNotes.length > 0) {
       errors.push({
-        field: "notes",
+        field: `${fieldPrefix}notes`,
         message: `notes contains keys not in roots: ${orphanNotes.join(", ")}`,
       });
     }
   }
 
+  if (errors.length > 0) return { errors, valid: null };
+
+  return {
+    errors: [],
+    valid: {
+      source_org: entry.source_org as string,
+      source_id: (typeof entry.source_id === "string" && entry.source_id.trim() !== "")
+        ? entry.source_id
+        : entry.source_org as string,
+      roots: entry.roots as string[],
+      notes: entry.notes as Record<string, string>,
+    },
+  };
+}
+
+function validateManifest(
+  raw: unknown,
+  expectedModule: string,
+): { ok: true; manifest: ValidManifest } | { ok: false; errors: ValidationError[] } {
+  const errors: ValidationError[] = [];
+  const data = raw as Record<string, unknown>;
+
+  // ── module ───────────────────────────────────────────────────────────────
+  if (typeof data.module !== "string" || data.module.trim() === "") {
+    errors.push({ field: "module", message: "must be a non-empty string" });
+  } else if (data.module !== expectedModule) {
+    errors.push({
+      field: "module",
+      message: `must equal "${expectedModule}" (got "${data.module}")`,
+    });
+  }
+
+  // ── description ──────────────────────────────────────────────────────────
+  if (typeof data.description !== "string" || data.description.trim() === "") {
+    errors.push({ field: "description", message: "must be a non-empty string" });
+  }
+
   if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, manifest: data as unknown as ValidManifest };
+
+  // ── sources / roots ───────────────────────────────────────────────────────
+  const isMultiSource =
+    Array.isArray(data.sources) && (data.sources as unknown[]).length > 0;
+  const isLegacyFlat =
+    Array.isArray(data.roots) && (data.roots as unknown[]).length > 0;
+
+  if (!isMultiSource && !isLegacyFlat) {
+    return {
+      ok: false,
+      errors: [
+        {
+          field: "sources / roots",
+          message:
+            'must provide either a non-empty "sources" array (multi-source format) ' +
+            'or a legacy top-level "roots" array',
+        },
+      ],
+    };
+  }
+
+  const rawEntries: Array<Record<string, unknown>> = isMultiSource
+    ? (data.sources as Array<Record<string, unknown>>)
+    : [
+        {
+          source_org: data.source_org,
+          source_id: data.source_id,
+          roots: data.roots,
+          notes: data.notes,
+        },
+      ];
+
+  const validSources: ValidSourceEntry[] = [];
+  const sourceErrors: ValidationError[] = [];
+
+  for (let i = 0; i < rawEntries.length; i++) {
+    const prefix = isMultiSource ? `sources[${i}].` : "";
+    const { errors: entryErrors, valid } = validateSourceEntry(rawEntries[i], prefix);
+    if (entryErrors.length > 0) {
+      sourceErrors.push(...entryErrors);
+    } else if (valid) {
+      validSources.push(valid);
+    }
+  }
+
+  if (sourceErrors.length > 0) return { ok: false, errors: sourceErrors };
+
+  return {
+    ok: true,
+    manifest: {
+      module: data.module as string,
+      description: data.description as string,
+      sources: validSources,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -153,8 +242,15 @@ async function validateModule(
     return false;
   }
 
+  const totalRoots = result.manifest.sources.reduce(
+    (sum, s) => sum + s.roots.length,
+    0,
+  );
+  const sourceLabel = result.manifest.sources
+    .map((s) => `"${s.source_org}"`)
+    .join(", ");
   console.log(
-    `${prefix} ✓  ${result.manifest.roots.length} root(s), source_org="${result.manifest.source_org}"`,
+    `${prefix} ✓  ${totalRoots} root(s) across ${result.manifest.sources.length} source(s): ${sourceLabel}`,
   );
   return true;
 }

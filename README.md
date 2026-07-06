@@ -81,27 +81,57 @@ The module system has a clear two-layer separation:
 
 ### Manifest format
 
-Every entry in `CONCEPT_MODULES` must have a corresponding `manifests/{manifestModule}.json`. The file must contain all five fields:
+Every entry in `CONCEPT_MODULES` must have a corresponding `manifests/{manifestModule}.json`. Manifests use a `sources` array — one entry per upstream OCL source. Each source entry declares its own roots and notes:
 
 ```json
 {
   "module": "lab",
-  "source_org": "CIEL",
   "description": "Human-readable description of the module's concept scope.",
-  "roots": ["1271"],
-  "notes": {
-    "1271": "Tests ordered (ConvSet) — CIEL's top-level root for all orderable investigations."
-  }
+  "sources": [
+    {
+      "source_org": "CIEL",
+      "source_id": "CIEL",
+      "roots": ["1271"],
+      "notes": {
+        "1271": "Tests ordered (ConvSet) — CIEL's top-level root for all orderable investigations."
+      }
+    }
+  ]
+}
+```
+
+A module can pull from multiple sources (e.g. CIEL + PIH). The packaging pipeline unions closures from all source entries and de-duplicates cross-source SAME-AS pairs automatically:
+
+```json
+{
+  "module": "hiv",
+  "description": "...",
+  "sources": [
+    {
+      "source_org": "CIEL",
+      "source_id": "CIEL",
+      "roots": ["5356"],
+      "notes": { "5356": "..." }
+    },
+    {
+      "source_org": "PIH",
+      "source_id": "PIH",
+      "roots": ["6042"],
+      "notes": { "6042": "PHQ-9 depression screening (PIH ConvSet)" }
+    }
+  ]
 }
 ```
 
 | Field | Requirement |
 |---|---|
 | `module` | Must match the filename (without `.json`) |
-| `source_org` | Non-empty string — OCL org that owns the source (e.g. `CIEL`) |
 | `description` | Non-empty string |
-| `roots` | Non-empty array of concept IDs |
-| `notes` | Object whose keys are exactly the set of `roots` IDs (every root annotated, no orphans) |
+| `sources` | Non-empty array of source entries |
+| `sources[].source_org` | Non-empty string — OCL org (e.g. `CIEL`, `PIH`) |
+| `sources[].source_id` | OCL source short code within that org (defaults to `source_org`) |
+| `sources[].roots` | Non-empty array of concept IDs within that source |
+| `sources[].notes` | Object whose keys are exactly the set of `roots` IDs (every root annotated, no orphans) |
 
 ---
 
@@ -272,9 +302,9 @@ npm run packaging:validate -- --dry-run  # validate only, no DB write
 
 Checks every entry in `CONCEPT_MODULES` against its manifest file. Fails fast with a clear error if:
 - A manifest file is missing
-- Any required field (`module`, `source_org`, `description`, `roots`, `notes`) is absent or empty
-- `roots` is an empty array
-- `notes` keys do not exactly match `roots` (missing annotation or orphan key)
+- Any required field (`module`, `description`, `sources`, per-source `source_org`, `roots`, `notes`) is absent or empty
+- A source entry's `roots` is an empty array
+- A source entry's `notes` keys do not exactly match its `roots` (missing annotation or orphan key)
 
 Also warns on any manifest files that have no corresponding `CONCEPT_MODULES` entry.
 
