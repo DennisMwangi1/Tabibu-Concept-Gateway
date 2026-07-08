@@ -1,10 +1,14 @@
 import { Router } from "express";
 import { buildBundleForHospital } from "../bundles/buildBundle.js";
 import { getSupabase } from "../config/supabase.js";
+import { parseBundleAppliedBody } from "../lib/bundleApplied.js";
+import { requireHospitalAuth } from "../middleware/requireHospitalAuth.js";
 import { deriveSubscriptionsForHospital } from "../subscriptions/deriveSubscriptions.js";
 import { markRolloutApplied } from "../upgrades/rolloutService.js";
 
 export const hospitalRoutes = Router();
+
+hospitalRoutes.use("/hospitals/:id", requireHospitalAuth);
 
 /**
  * Returns the full concept bundle for a hospital based on provisioned app modules.
@@ -37,11 +41,9 @@ hospitalRoutes.get("/hospitals/:id/bundle", async (req, res, next) => {
 hospitalRoutes.post("/hospitals/:id/bundle-applied", async (req, res, next) => {
   try {
     const { id: hospitalId } = req.params;
-    const { success, failureReason, collections } = req.body as {
-      success: boolean;
-      failureReason?: string;
-      collections?: Array<{ id: string; version: string }>;
-    };
+    const { success, failureReason, collections } = parseBundleAppliedBody(
+      req.body,
+    );
 
     const supabase = getSupabase();
     await supabase.from("sync_log").insert({
@@ -58,7 +60,7 @@ hospitalRoutes.post("/hospitals/:id/bundle-applied", async (req, res, next) => {
       .eq("status", "pending");
 
     for (const rollout of pending ?? []) {
-      const appliedCollection = (collections ?? []).find(
+      const appliedCollection = collections.find(
         (c) => c.id === rollout.collection_id && c.version === rollout.to_version,
       );
       if (success && appliedCollection) {

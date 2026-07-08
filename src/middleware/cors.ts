@@ -3,7 +3,7 @@ import { env } from "../config/env.js";
 
 const ALLOWED_HEADERS = [
   "Content-Type",
-  "x-admin-api-key",
+  "Authorization",
   "x-ops-api-key",
 ].join(", ");
 

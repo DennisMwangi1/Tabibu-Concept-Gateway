@@ -1,10 +1,73 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { ArrowLeft, Building2, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Building2, CheckCircle2, Copy, KeyRound } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useModuleCatalog } from "../hooks/useModuleCatalog";
 import { api } from "../lib/api";
+
+function ApiKeyReveal({
+  apiKey,
+  hospitalId,
+  onDone,
+}: {
+  apiKey: string;
+  hospitalId: string;
+  onDone: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    await navigator.clipboard.writeText(apiKey);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-2xl border border-amber-200 bg-amber-50 p-6 space-y-4"
+    >
+      <div className="flex items-start gap-3">
+        <KeyRound className="h-5 w-5 text-amber-700 shrink-0 mt-0.5" />
+        <div>
+          <h2 className="text-sm font-semibold text-amber-900">
+            Save the hospital API key now
+          </h2>
+          <p className="text-xs text-amber-800 mt-1">
+            This key authenticates the on-site sync client. It will not be shown
+            again. Configure it as{" "}
+            <code className="font-mono bg-amber-100 px-1 rounded">
+              Authorization: Bearer &lt;key&gt;
+            </code>{" "}
+            on bundle and subscription requests.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <code className="flex-1 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-mono text-slate-800 break-all">
+          {apiKey}
+        </code>
+        <button
+          onClick={copy}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-medium text-amber-900 hover:bg-amber-100"
+        >
+          <Copy className="h-3.5 w-3.5" />
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+
+      <button
+        onClick={onDone}
+        className="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-700"
+      >
+        I've saved the key — open hospital {hospitalId.slice(0, 8)}…
+      </button>
+    </motion.div>
+  );
+}
 
 export default function RegisterHospital() {
   const navigate = useNavigate();
@@ -13,6 +76,10 @@ export default function RegisterHospital() {
   const [name, setName] = useState("");
   const [kmhfl_code, setKmhflCode] = useState("");
   const [selectedModules, setSelectedModules] = useState<string[]>([]);
+  const [registered, setRegistered] = useState<{
+    hospitalId: string;
+    apiKey: string;
+  } | null>(null);
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -23,7 +90,7 @@ export default function RegisterHospital() {
       }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["hospitals"] });
-      navigate(`/hospitals/${data.hospital.id}`);
+      setRegistered({ hospitalId: data.hospital.id, apiKey: data.api_key });
     },
   });
 
@@ -34,6 +101,18 @@ export default function RegisterHospital() {
   };
 
   const canSubmit = name.trim().length > 0 && !mutation.isPending;
+
+  if (registered) {
+    return (
+      <div className="max-w-2xl">
+        <ApiKeyReveal
+          apiKey={registered.apiKey}
+          hospitalId={registered.hospitalId}
+          onDone={() => navigate(`/hospitals/${registered.hospitalId}`)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl">
@@ -194,6 +273,7 @@ export default function RegisterHospital() {
             </p>
             <p className="mt-1 text-xs text-slate-400">
               Collection subscriptions will be auto-derived after registration.
+              An API key for the on-site sync client will be generated once.
             </p>
           </motion.div>
         )}

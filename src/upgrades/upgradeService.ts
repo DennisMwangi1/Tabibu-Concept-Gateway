@@ -1,6 +1,7 @@
 import { getSupabase } from "../config/supabase.js";
 import { nextVersionAfter } from "../lib/versionUtils.js";
 import { listCollectionVersions } from "../collections/versionService.js";
+import { insertConceptDiffs } from "./conceptDiffService.js";
 import { diffCollectionVersions } from "./diffReport.js";
 import { createUpgradeReport } from "./reportService.js";
 
@@ -57,11 +58,8 @@ export async function triggerCollectionUpgrade(
 
   if (rolloutError) throw rolloutError;
 
-  const { changedConcepts, retiredConcepts } = await diffCollectionVersions(
-    collectionId,
-    fromVersion,
-    toVersion,
-  );
+  const { changedConcepts, retiredConcepts, structuredDiffs } =
+    await diffCollectionVersions(collectionId, fromVersion, toVersion);
 
   await createUpgradeReport({
     rolloutId: rollout.id,
@@ -72,6 +70,14 @@ export async function triggerCollectionUpgrade(
     changedConcepts,
     retiredConcepts,
   });
+
+  await insertConceptDiffs(
+    rollout.id,
+    collectionId,
+    fromVersion,
+    toVersion,
+    structuredDiffs,
+  );
 
   // Update the pin immediately — the hospital gets the new bundle on its next sync.
   const { error: pinError } = await supabase

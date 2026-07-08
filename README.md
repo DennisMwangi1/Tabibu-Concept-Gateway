@@ -41,7 +41,7 @@ curl http://localhost:3100/ready    # {"status":"ready","checks":{"supabase":"ok
 
 ```bash
 cd admin
-cp .env.example .env   # set VITE_GATEWAY_URL and VITE_ADMIN_API_KEY
+cp .env.example .env   # set VITE_GATEWAY_URL, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 npm install
 npm run dev            # Vite dev server on port 5173
 ```
@@ -137,7 +137,36 @@ A module can pull from multiple sources (e.g. CIEL + PIH). The packaging pipelin
 
 ## Hospital sync API
 
-Called by the Go sync client inside each hospital install. No authentication required.
+Called by the Go sync client inside each hospital install. Every request must authenticate with that hospital's API key — a key only works for the hospital it was issued to.
+
+### Authentication
+
+When a hospital is registered (or its key is rotated) in the admin UI, the gateway returns a **one-time** API key. Store it in the hospital's environment — the gateway only keeps a SHA-256 hash.
+
+All three sync endpoints require:
+
+```
+Authorization: Bearer <hospital-api-key>
+```
+
+The middleware hashes the bearer token and compares it to `hospitals.api_key_hash` for the `:id` in the URL. A key for hospital A cannot access hospital B's routes.
+
+**Configure the Go sync client** with the key and gateway base URL, e.g.:
+
+```bash
+TABIBU_GATEWAY_URL=https://api.yourdomain.com
+TABIBU_GATEWAY_API_KEY=<key-from-admin-ui>
+```
+
+The client should send the key on every call:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/hospitals/:id/bundle` | GET | Fetch the concept bundle |
+| `/hospitals/:id/bundle-applied` | POST | Report apply success or failure |
+| `/hospitals/:id/subscriptions` | GET | List provisioned modules and pinned versions |
+
+If a key is lost or compromised, use **Rotate key** on the hospital detail page in the admin UI. The old key stops working immediately.
 
 ### `GET /hospitals/:id/bundle`
 
@@ -186,10 +215,9 @@ The hospital upserts these tables in order: `concept_classes` → `concept_datat
 
 Hospital reports whether it successfully applied the bundle. Marks any pending upgrade rollouts as `applied` or `failed`.
 
-**Body:**
+**Body (success):**
 ```json
 {
-  "success": true,
   "collections": [
     { "id": "tabibu-core", "version": "v1.0.2" },
     { "id": "tabibu-lab",  "version": "v1.0.2" }
@@ -197,7 +225,20 @@ Hospital reports whether it successfully applied the bundle. Marks any pending u
 }
 ```
 
-On failure, include `"failureReason": "..."`. Both outcomes are written to `sync_log`.
+`success: true` is optional on success — if omitted and no `failureReason` is present, the gateway records `bundle_applied`.
+
+**Body (failure):**
+```json
+{
+  "success": false,
+  "failureReason": "concept upsert failed: duplicate key",
+  "collections": [
+    { "id": "tabibu-core", "version": "v1.0.2" }
+  ]
+}
+```
+
+Both outcomes are written to `sync_log`. Pending upgrade rollouts matching the reported collection versions are marked `applied` or `failed`.
 
 ---
 
@@ -209,11 +250,13 @@ Returns which app modules and OCL collections the hospital is subscribed to.
 
 ## Admin API
 
-All admin endpoints require the `x-admin-api-key` header.
+All admin endpoints require a valid Supabase session. The admin UI sends:
 
 ```
-x-admin-api-key: <ADMIN_API_KEY from .env>
+Authorization: Bearer <supabase_access_token>
 ```
+
+The gateway verifies the token with `supabase.auth.getUser()` using the service role key. Public signup should be disabled in Supabase — invite admin users via the dashboard or `auth.admin.inviteUserByEmail()`.
 
 ### Modules
 
@@ -228,9 +271,10 @@ The admin UI calls this on startup to populate module pickers and chips. Adding 
 | Method | Path | Description |
 |---|---|---|
 | GET | `/admin/hospitals` | List all hospitals with module counts and subscriptions |
-| POST | `/admin/hospitals` | Register a new hospital (optionally provision modules) |
+| POST | `/admin/hospitals` | Register a new hospital (returns one-time API key) |
 | GET | `/admin/hospitals/:id` | Full hospital detail — modules, subscriptions, sync log |
 | PATCH | `/admin/hospitals/:id` | Update name, KMHFL code, or active status |
+| POST | `/admin/hospitals/:id/rotate-key` | Rotate hospital sync API key (returns new key once) |
 | POST | `/admin/hospitals/:id/modules` | Add an app module |
 | DELETE | `/admin/hospitals/:id/modules/:module` | Remove an app module |
 
@@ -241,6 +285,7 @@ The admin UI calls this on startup to populate module pickers and chips. Adding 
 | POST | `/admin/hospitals/:id/upgrade` | Upgrade one collection to a specific version |
 | POST | `/admin/hospitals/:id/upgrade-all` | Upgrade all subscriptions to next available version |
 | GET | `/admin/hospitals/:id/reports` | List upgrade diff reports |
+| GET | `/admin/hospitals/:id/reports/:rolloutId` | Narrative upgrade summary (cached or generated) |
 | GET | `/admin/hospitals/:id/sync-log` | Recent sync events |
 
 **How upgrades work:**
@@ -262,9 +307,11 @@ The admin UI calls this on startup to populate module pickers and chips. Adding 
 
 ### Registering a hospital (via API)
 
+Requires a signed-in admin session token:
+
 ```bash
 curl -X POST http://localhost:3100/admin/hospitals \
-  -H "x-admin-api-key: tabibu-admin-dev-key" \
+  -H "Authorization: Bearer <supabase-access-token>" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Nyabondo District Hospital",
@@ -272,6 +319,8 @@ curl -X POST http://localhost:3100/admin/hospitals \
     "modules": ["laboratory", "pharmacy"]
   }'
 ```
+
+The response includes `api_key` — save it for the hospital's Go sync client. It is not returned again.
 
 KMHFL codes must be unique. Subscriptions for the provisioned modules are created automatically, pinned to `collections.latest_version`.
 
@@ -384,21 +433,22 @@ npm run packaging:validate
 | `PORT` | No (default 3100) | HTTP port |
 | `SUPABASE_URL` | Yes | Gateway Supabase project URL |
 | `SUPABASE_PUBLISHABLE_KEY` | Yes | Supabase publishable key — used by the runtime gateway (respects RLS) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Packaging CI only | Bypasses RLS; required for `packaging:validate` (sync), `packaging:release` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Admin auth verification; required for `packaging:validate` (sync), `packaging:release` |
 | `OCL_BASE_URL` | No (default OCL public) | Override to point at a self-hosted OCL deployment |
 | `OCL_ORG` | Yes | OCL organisation name (e.g. `Tabibu`) |
 | `OCL_API_TOKEN` | Packaging CI only | Required for authoring/curation writes; read-only bundle fetching works without it |
 | `BUNDLE_CACHE_DIR` | No (default `.cache/bundles`) | Filesystem cache for OCL export ZIPs |
-| `ADMIN_API_KEY` | Yes | Shared secret for all `/admin/*` endpoints |
 | `ADMIN_CORS_ORIGINS` | No (default `http://localhost:5173`) | Comma-separated browser origins allowed to call admin endpoints |
 | `OPS_API_KEY` | Yes | Shared secret for ops rollout endpoints |
+| `LLM_API_KEY` | No | When set, upgrade narrative reports use an LLM; otherwise a text summary is generated |
 
 ### Admin UI environment (`admin/.env`)
 
 | Variable | Description |
 |---|---|
 | `VITE_GATEWAY_URL` | Gateway base URL (e.g. `http://localhost:3100`) |
-| `VITE_ADMIN_API_KEY` | Must match `ADMIN_API_KEY` on the gateway |
+| `VITE_SUPABASE_URL` | Supabase project URL (same project as the gateway) |
+| `VITE_SUPABASE_ANON_KEY` | Supabase anon/publishable key for browser auth |
 
 ---
 

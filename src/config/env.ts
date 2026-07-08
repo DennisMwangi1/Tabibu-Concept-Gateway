@@ -9,8 +9,8 @@ const EnvSchema = z.object({
     .default("info"),
   SUPABASE_URL: z.string().url(),
   SUPABASE_PUBLISHABLE_KEY: z.string().min(1),
-  /** Required for packaging CI and any admin write that bypasses RLS. */
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
+  /** Required for admin auth verification and packaging CI writes. */
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   // Default to the OCL public instance. Override with a self-hosted URL when needed.
   OCL_BASE_URL: z.string().url().default("https://api.openconceptlab.org"),
   // Optional for reading public collections; required for authoring/curation writes.
@@ -18,7 +18,13 @@ const EnvSchema = z.object({
   OCL_ORG: z.string().default("Tabibu"),
   BUNDLE_CACHE_DIR: z.string().default("./.cache/bundles"),
   OPS_API_KEY: z.string().min(1),
-  ADMIN_API_KEY: z.string().min(1),
+  /** Optional — when set, upgrade narrative reports use an LLM. */
+  LLM_API_KEY: z.string().min(1).optional(),
+  LLM_API_URL: z
+    .string()
+    .url()
+    .default("https://api.openai.com/v1/chat/completions"),
+  LLM_MODEL: z.string().default("gpt-4o-mini"),
   /** Comma-separated browser origins allowed to call admin/ops endpoints. */
   ADMIN_CORS_ORIGINS: z
     .string()

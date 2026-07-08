@@ -5,16 +5,18 @@ import type {
   HospitalDetailResponse,
   HospitalListResponse,
   ModuleCatalogResponse,
+  NarrativeReportResponse,
   PackagingStatusResponse,
   RegisterHospitalResponse,
   ReportsResponse,
+  RotateKeyResponse,
   SyncLogResponse,
   UpgradeAllResponse,
   UpgradeResponse,
 } from "./types";
+import { supabase } from "./supabase";
 
 const BASE = import.meta.env.VITE_GATEWAY_URL ?? "";
-const ADMIN_KEY = import.meta.env.VITE_ADMIN_API_KEY ?? "";
 
 class ApiError extends Error {
   constructor(
@@ -26,15 +28,25 @@ class ApiError extends Error {
   }
 }
 
+async function getAccessToken(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  const token = await getAccessToken();
+  if (!token) {
+    throw new ApiError(401, "Not signed in");
+  }
+
   const res = await fetch(`${BASE}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      "x-admin-api-key": ADMIN_KEY,
+      Authorization: `Bearer ${token}`,
       ...options.headers,
     },
   });
@@ -75,6 +87,11 @@ export const api = {
         { method: "PATCH", body: JSON.stringify(data) },
       ),
 
+    rotateKey: (id: string) =>
+      request<RotateKeyResponse>(`/admin/hospitals/${id}/rotate-key`, {
+        method: "POST",
+      }),
+
     addModule: (id: string, app_module: string) =>
       request<AddModuleResponse>(`/admin/hospitals/${id}/modules`, {
         method: "POST",
@@ -103,6 +120,11 @@ export const api = {
 
     reports: (id: string) =>
       request<ReportsResponse>(`/admin/hospitals/${id}/reports`),
+
+    narrativeReport: (id: string, rolloutId: number) =>
+      request<NarrativeReportResponse>(
+        `/admin/hospitals/${id}/reports/${rolloutId}`,
+      ),
 
     syncLog: (id: string, limit?: number) =>
       request<SyncLogResponse>(

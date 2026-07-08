@@ -6,6 +6,7 @@ export interface Hospital {
   kmhfl_code: string | null;
   is_active: boolean;
   created_at: string;
+  has_api_key?: boolean;
 }
 
 export interface HospitalSummary extends Hospital {
@@ -87,6 +88,20 @@ export interface HospitalDetailResponse extends HospitalDetail {}
 export interface RegisterHospitalResponse {
   hospital: Hospital;
   subscriptions: CollectionSubscription[];
+  api_key: string;
+}
+
+export interface RotateKeyResponse {
+  api_key: string;
+}
+
+export interface NarrativeReportResponse {
+  rolloutId: number;
+  collectionId: string;
+  fromVersion: string | null;
+  toVersion: string;
+  narrative: string;
+  cached: boolean;
 }
 
 export interface AddModuleResponse {

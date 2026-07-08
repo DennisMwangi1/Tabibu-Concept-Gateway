@@ -2,7 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
+  Copy,
   GitBranch,
+  KeyRound,
   Minus,
   Plus,
   RefreshCw,
@@ -60,6 +62,13 @@ export default function HospitalDetail() {
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["hospital", id] }),
   });
+
+  const rotateKey = useMutation({
+    mutationFn: () => api.hospitals.rotateKey(id!),
+  });
+
+  const [rotatedKey, setRotatedKey] = useState<string | null>(null);
+  const [keyCopied, setKeyCopied] = useState(false);
 
   if (isLoading) {
     return (
@@ -142,6 +151,72 @@ export default function HospitalDetail() {
           </div>
         </div>
       </div>
+
+      {/* Sync API key */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="rounded-2xl border border-slate-200 bg-white p-5"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+              <KeyRound className="h-4 w-4 text-slate-500" />
+              Hospital Sync API Key
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              Used by the on-site Go sync client.{" "}
+              {hospital.has_api_key
+                ? "A key is configured."
+                : "No key configured yet."}
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Rotate the API key? The old key stops working immediately.",
+                )
+              ) {
+                rotateKey.mutate(undefined, {
+                  onSuccess: (res) => {
+                    setRotatedKey(res.api_key);
+                    queryClient.invalidateQueries({ queryKey: ["hospital", id] });
+                  },
+                });
+              }
+            }}
+            disabled={rotateKey.isPending}
+            className="rounded-lg border border-slate-200 px-3.5 py-2 text-sm text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
+          >
+            {rotateKey.isPending ? "Rotating…" : "Rotate key"}
+          </button>
+        </div>
+
+        {rotatedKey && (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-2">
+            <p className="text-xs text-amber-800 font-medium">
+              New key — copy now, it won't be shown again
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-mono break-all">
+                {rotatedKey}
+              </code>
+              <button
+                onClick={async () => {
+                  await navigator.clipboard.writeText(rotatedKey);
+                  setKeyCopied(true);
+                  setTimeout(() => setKeyCopied(false), 2000);
+                }}
+                className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs text-amber-900"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                {keyCopied ? "Copied" : "Copy"}
+              </button>
+            </div>
+          </div>
+        )}
+      </motion.div>
 
       {/* Main grid */}
       <div className="grid gap-6 lg:grid-cols-3">
@@ -277,6 +352,7 @@ export default function HospitalDetail() {
           Upgrade Reports
         </h2>
         <UpgradeReportsTable
+          hospitalId={hospital.id}
           reports={reportsData?.reports ?? []}
           isLoading={reportsLoading}
         />

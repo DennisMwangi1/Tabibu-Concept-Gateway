@@ -1,14 +1,20 @@
-import { Router, type Request, type Response, type NextFunction } from "express";
+import { Router } from "express";
+import { logAdminAction } from "../audit/adminAuditLog.js";
 import { env } from "../config/env.js";
 import { labelForCollection } from "../config/modules.js";
 import { getModuleCatalog } from "../modules/catalog.js";
 import { getSupabase } from "../config/supabase.js";
 import { checkExportReady } from "../ocl/exportFetcher.js";
-import { NotFoundError, UnauthorizedError, ConflictError } from "../lib/errors.js";
+import { NotFoundError, ConflictError } from "../lib/errors.js";
+import {
+  generateHospitalApiKey,
+  hashHospitalApiKey,
+} from "../lib/hospitalApiKey.js";
+import { requireAuth } from "../middleware/requireAuth.js";
 import { deriveSubscriptionsForHospital } from "../subscriptions/deriveSubscriptions.js";
 import { listCollectionVersions } from "../collections/versionService.js";
+import { getOrGenerateNarrativeReport } from "../upgrades/narrativeReport.js";
 import { listUpgradeReports } from "../upgrades/reportService.js";
-import { listRolloutsForHospital } from "../upgrades/rolloutService.js";
 import {
   triggerCollectionUpgrade,
   triggerNextUpgradesForHospital,
@@ -16,15 +22,7 @@ import {
 
 export const adminRoutes = Router();
 
-function requireAdminKey(req: Request, _res: Response, next: NextFunction) {
-  const key = req.header("x-admin-api-key");
-  if (!key || key !== env.ADMIN_API_KEY) {
-    return next(new UnauthorizedError("Invalid or missing admin API key"));
-  }
-  next();
-}
-
-adminRoutes.use(requireAdminKey);
+adminRoutes.use(requireAuth);
 
 // ---------------------------------------------------------------------------
 // GET /admin/modules — provisionable module catalog for the admin UI
@@ -113,9 +111,12 @@ adminRoutes.post("/admin/hospitals", async (req, res, next) => {
       }
     }
 
+    const apiKey = generateHospitalApiKey();
+    const api_key_hash = hashHospitalApiKey(apiKey);
+
     const { data: hospital, error: hospitalError } = await supabase
       .from("hospitals")
-      .insert({ name, kmhfl_code })
+      .insert({ name, kmhfl_code, api_key_hash })
       .select()
       .single();
 
@@ -132,7 +133,6 @@ adminRoutes.post("/admin/hospitals", async (req, res, next) => {
       if (moduleError) throw moduleError;
     }
 
-    // Auto-derive collection subscriptions from the provisioned modules.
     await deriveSubscriptionsForHospital(hospital.id);
 
     const { data: subscriptions } = await supabase
@@ -140,7 +140,22 @@ adminRoutes.post("/admin/hospitals", async (req, res, next) => {
       .select("collection_id, pinned_version")
       .eq("hospital_id", hospital.id);
 
-    res.status(201).json({ hospital, subscriptions: subscriptions ?? [] });
+    await logAdminAction(req, "hospital.create", "hospital", hospital.id, {
+      name,
+      kmhfl_code: kmhfl_code ?? null,
+      modules,
+    });
+
+    const { api_key_hash: _hash, ...safeHospital } = hospital as Record<
+      string,
+      unknown
+    >;
+
+    res.status(201).json({
+      hospital: safeHospital,
+      subscriptions: subscriptions ?? [],
+      api_key: apiKey,
+    });
   } catch (err) {
     next(err);
   }
@@ -182,8 +197,13 @@ adminRoutes.get("/admin/hospitals/:id", async (req, res, next) => {
           .limit(20),
       ]);
 
+    const { api_key_hash, ...safeHospital } = hospital;
+
     res.json({
-      hospital,
+      hospital: {
+        ...safeHospital,
+        has_api_key: !!api_key_hash,
+      },
       modules: modulesResult.data ?? [],
       subscriptions: subscriptionsResult.data ?? [],
       recent_sync_log: syncLogResult.data ?? [],
@@ -240,11 +260,53 @@ adminRoutes.patch("/admin/hospitals/:id", async (req, res, next) => {
     if (error) throw error;
     if (!hospital) throw new NotFoundError(`Hospital ${id} not found`);
 
-    res.json({ hospital });
+    await logAdminAction(req, "hospital.update", "hospital", id, updates);
+
+    const { api_key_hash: _hash, ...safeHospital } = hospital;
+
+    res.json({ hospital: { ...safeHospital, has_api_key: !!hospital.api_key_hash } });
   } catch (err) {
     next(err);
   }
 });
+
+// ---------------------------------------------------------------------------
+// POST /admin/hospitals/:id/rotate-key — rotate hospital sync API key
+// ---------------------------------------------------------------------------
+adminRoutes.post(
+  "/admin/hospitals/:id/rotate-key",
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const supabase = getSupabase();
+
+      const { data: existing, error: fetchError } = await supabase
+        .from("hospitals")
+        .select("id")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+      if (!existing) throw new NotFoundError(`Hospital ${id} not found`);
+
+      const apiKey = generateHospitalApiKey();
+      const api_key_hash = hashHospitalApiKey(apiKey);
+
+      const { error: updateError } = await supabase
+        .from("hospitals")
+        .update({ api_key_hash })
+        .eq("id", id);
+
+      if (updateError) throw updateError;
+
+      await logAdminAction(req, "key.rotate", "hospital", id);
+
+      res.json({ api_key: apiKey });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ---------------------------------------------------------------------------
 // POST /admin/hospitals/:id/modules — add an app module
@@ -260,7 +322,6 @@ adminRoutes.post("/admin/hospitals/:id/modules", async (req, res, next) => {
 
     const supabase = getSupabase();
 
-    // Re-enable if previously disabled; insert if new.
     const { data: existing } = await supabase
       .from("hospital_app_modules")
       .select("id, disabled_at")
@@ -287,6 +348,10 @@ adminRoutes.post("/admin/hospitals/:id/modules", async (req, res, next) => {
       .select("collection_id, pinned_version")
       .eq("hospital_id", hospitalId);
 
+    await logAdminAction(req, "module.add", "hospital", hospitalId, {
+      app_module,
+    });
+
     res.status(201).json({ app_module, subscriptions: subscriptions ?? [] });
   } catch (err) {
     next(err);
@@ -312,6 +377,10 @@ adminRoutes.delete(
 
       if (error) throw error;
 
+      await logAdminAction(req, "module.remove", "hospital", hospitalId, {
+        app_module,
+      });
+
       res.json({ ok: true, app_module, disabled: true });
     } catch (err) {
       next(err);
@@ -325,7 +394,7 @@ adminRoutes.delete(
 adminRoutes.post("/admin/hospitals/:id/upgrade", async (req, res, next) => {
   try {
     const { id: hospitalId } = req.params;
-    const { collectionId, toVersion, triggeredBy = "admin" } = req.body as {
+    const { collectionId, toVersion, triggeredBy } = req.body as {
       collectionId: string;
       toVersion: string;
       triggeredBy?: string;
@@ -337,11 +406,29 @@ adminRoutes.post("/admin/hospitals/:id/upgrade", async (req, res, next) => {
         .json({ error: "collectionId and toVersion are required" });
     }
 
+    const actor = req.user?.email ?? "admin";
     const result = await triggerCollectionUpgrade(
       hospitalId,
       collectionId,
       toVersion,
-      triggeredBy,
+      triggeredBy ?? actor,
+    );
+
+    const isRollback =
+      result.fromVersion != null &&
+      compareVersionStrings(result.toVersion, result.fromVersion) < 0;
+
+    await logAdminAction(
+      req,
+      isRollback ? "upgrade.rollback" : "upgrade.trigger",
+      "rollout",
+      String(result.rolloutId),
+      {
+        hospitalId,
+        collectionId,
+        fromVersion: result.fromVersion,
+        toVersion: result.toVersion,
+      },
     );
 
     res.status(201).json({
@@ -364,14 +451,23 @@ adminRoutes.post(
   async (req, res, next) => {
     try {
       const { id: hospitalId } = req.params;
-      const { triggeredBy = "admin" } = (req.body ?? {}) as {
-        triggeredBy?: string;
-      };
+      const { triggeredBy } = (req.body ?? {}) as { triggeredBy?: string };
+      const actor = req.user?.email ?? "admin";
 
       const { upgrades, skipped } = await triggerNextUpgradesForHospital(
         hospitalId,
-        triggeredBy,
+        triggeredBy ?? actor,
       );
+
+      for (const upgrade of upgrades) {
+        await logAdminAction(req, "upgrade.trigger", "rollout", String(upgrade.rolloutId), {
+          hospitalId,
+          collectionId: upgrade.collectionId,
+          fromVersion: upgrade.fromVersion,
+          toVersion: upgrade.toVersion,
+          bulk: true,
+        });
+      }
 
       res.status(201).json({ upgrades, skipped });
     } catch (err) {
@@ -391,6 +487,29 @@ adminRoutes.get("/admin/hospitals/:id/reports", async (req, res, next) => {
     next(err);
   }
 });
+
+// ---------------------------------------------------------------------------
+// GET /admin/hospitals/:id/reports/:rolloutId — narrative upgrade report
+// ---------------------------------------------------------------------------
+adminRoutes.get(
+  "/admin/hospitals/:id/reports/:rolloutId",
+  async (req, res, next) => {
+    try {
+      const rolloutId = Number(req.params.rolloutId);
+      if (!Number.isFinite(rolloutId)) {
+        return res.status(400).json({ error: "Invalid rolloutId" });
+      }
+
+      const report = await getOrGenerateNarrativeReport(
+        req.params.id,
+        rolloutId,
+      );
+      res.json(report);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ---------------------------------------------------------------------------
 // GET /admin/hospitals/:id/sync-log — recent sync events
@@ -503,3 +622,16 @@ adminRoutes.get("/admin/packaging/status", async (_req, res, next) => {
     next(err);
   }
 });
+
+function compareVersionStrings(a: string, b: string): number {
+  const parse = (v: string) =>
+    v.replace(/^v/i, "").split(".").map((p) => Number.parseInt(p, 10) || 0);
+  const aParts = parse(a);
+  const bParts = parse(b);
+  const len = Math.max(aParts.length, bParts.length);
+  for (let i = 0; i < len; i++) {
+    const diff = (aParts[i] ?? 0) - (bParts[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}

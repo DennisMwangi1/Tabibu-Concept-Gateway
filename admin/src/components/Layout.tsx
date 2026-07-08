@@ -4,10 +4,12 @@ import {
   Building2,
   ChevronRight,
   LayoutDashboard,
+  LogOut,
   Settings,
   Stethoscope,
 } from "lucide-react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { useAuth } from "./AuthProvider";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
@@ -16,6 +18,7 @@ const navItems = [
 
 export default function Layout() {
   const location = useLocation();
+  const { user, signOut } = useAuth();
 
   const breadcrumb = () => {
     const segments = location.pathname.split("/").filter(Boolean);
@@ -72,7 +75,19 @@ export default function Layout() {
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-sidebar-border px-4 py-4">
+        <div className="border-t border-sidebar-border px-4 py-4 space-y-3">
+          {user?.email && (
+            <p className="text-[11px] text-sidebar-text truncate" title={user.email}>
+              {user.email}
+            </p>
+          )}
+          <button
+            onClick={() => signOut()}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-sidebar-text hover:bg-sidebar-hover hover:text-sidebar-text-active transition-colors"
+          >
+            <LogOut className="h-3 w-3" />
+            Sign out
+          </button>
           <div className="flex items-center gap-2 text-[11px] text-sidebar-text">
             <Activity className="h-3 w-3 text-brand-500" />
             <span>Gateway</span>
