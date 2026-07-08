@@ -57,6 +57,13 @@ export interface TabibuConceptSet {
   sort_weight?: number;
 }
 
+/** Which OCL collection(s) a concept was sourced from — a concept shared
+ * across modules (promoted to tabibu-core) has one row per collection. */
+export interface TabibuConceptCollection {
+  concept_uuid: string;
+  collection_id: string;
+}
+
 export interface TabibuConceptNumeric {
   concept_uuid: string;
   hi_absolute?: number | null;
@@ -108,6 +115,7 @@ export interface TabibuConceptBundle {
   concept_sets: TabibuConceptSet[];
   concept_reference_terms: TabibuConceptReferenceTerm[];
   concept_reference_maps: TabibuConceptReferenceMap[];
+  concept_collections: TabibuConceptCollection[];
   generatedAt: string;
 }
 
@@ -125,5 +133,6 @@ export const EMPTY_BUNDLE: TabibuConceptBundle = {
   concept_sets: [],
   concept_reference_terms: [],
   concept_reference_maps: [],
+  concept_collections: [],
   generatedAt: new Date(0).toISOString(),
 };

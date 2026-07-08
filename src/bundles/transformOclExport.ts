@@ -234,6 +234,12 @@ export function transformOclExportToTabibu(
   bundle.concept_datatypes = [...datatypeNames].map((name) => ({ name }));
   bundle.concept_reference_sources = [...sourceNames].map((name) => ({ name }));
 
+  // Every concept in this part was sourced from this single collection export.
+  bundle.concept_collections = bundle.concepts.map((c) => ({
+    concept_uuid: c.uuid,
+    collection_id: collectionMeta.id,
+  }));
+
   return bundle;
 }
 
@@ -275,6 +281,12 @@ export function mergeTabibuBundles(bundles: TabibuConceptBundle[]): TabibuConcep
     concept_reference_maps: dedupeByKey(
       bundles.flatMap((b) => b.concept_reference_maps),
       (m) => `${m.concept_uuid}:${m.source_name}:${m.term_code}:${m.map_type ?? "SAME-AS"}`,
+    ),
+    // Composite key (not concept_uuid alone) — a concept shared across
+    // modules (promoted to tabibu-core) must keep a row per collection.
+    concept_collections: dedupeByKey(
+      bundles.flatMap((b) => b.concept_collections),
+      (cc) => `${cc.concept_uuid}:${cc.collection_id}`,
     ),
     generatedAt: new Date().toISOString(),
   };

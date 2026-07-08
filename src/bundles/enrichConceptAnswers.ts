@@ -117,6 +117,11 @@ async function ensureAnswerConceptInBundle(
       retire_reason: c.retire_reason != null ? str(c.retire_reason) : null,
     });
 
+    bundle.concept_collections.push({
+      concept_uuid: uuid,
+      collection_id: bundle.collections[0].id,
+    });
+
     if (!bundle.concept_classes.some((x) => x.name === conceptClass)) {
       bundle.concept_classes.push({ name: conceptClass });
     }

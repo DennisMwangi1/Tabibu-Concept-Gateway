@@ -170,12 +170,15 @@ Returns the full concept bundle for a hospital based on its provisioned app modu
     "concept_sets": [...],
     "concept_reference_terms": [...],
     "concept_reference_maps": [...],
+    "concept_collections": [...],
     "generatedAt": "2026-07-01T13:57:00.000Z"
   }
 }
 ```
 
-The hospital upserts these tables in order: `concept_classes` → `concept_datatypes` → `concept_reference_sources` → `concepts` → names/descriptions/numerics → answers/sets → reference maps.
+The hospital upserts these tables in order: `concept_classes` → `concept_datatypes` → `concept_reference_sources` → `concepts` → names/descriptions/numerics/**collections** → answers/sets → reference maps.
+
+`concept_collections` records which OCL collection(s) each concept was sourced from (`concept_uuid`, `collection_id`). A concept shared across modules and promoted to `tabibu-core` gets one row per collection it appears in — this is what lets the hospital app tell which module a concept belongs to, and prune a module's concepts cleanly if it's ever deprovisioned.
 
 ---
 
